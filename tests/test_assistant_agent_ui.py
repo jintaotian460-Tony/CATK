@@ -66,6 +66,9 @@ def test_codex_thread_start_uses_project_identity_and_root(tmp_path, monkeypatch
     calls = []
 
     class Rpc:
+        def __init__(self):
+            self.on_event = lambda method, params: None
+
         def request(self, method, params, *, timeout):
             calls.append((method, params))
             if method == 'project/read':
@@ -75,7 +78,18 @@ def test_codex_thread_start_uses_project_identity_and_root(tmp_path, monkeypatch
             if method == 'thread/start':
                 return {'thread': {'id': '12345678-1234-1234-1234-123456789abc',
                                    'cwd': str(root), 'projectId': project.id, 'ephemeral': False}}
+            if method == 'turn/start':
+                self.on_event('turn/completed', {
+                    'threadId': '12345678-1234-1234-1234-123456789abc',
+                    'turn': {'id': 't1', 'status': 'completed'}})
+                return {'turn': {'id': 't1'}}
             return {}
+
+        def notify(self, method, params=None):
+            pass
+
+        def pump(self, timeout):
+            pass
 
         def finish(self):
             pass

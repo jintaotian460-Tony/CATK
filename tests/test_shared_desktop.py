@@ -135,8 +135,18 @@ def test_selected_project_reaches_native_chat_and_evidence_returns_to_plot(
         created.append((scope, question, project))
         return thread_id
 
+    evidence_holder = {}
+
+    def read(_, chat, cancel):
+        assert chat == thread_id
+        if not evidence_holder:
+            return '（证据编号尚未生成…）', ()
+        return (f'延迟 0.25 s [{evidence_holder["identifier"]}]',
+                (evidence_holder['identifier'], 'ev-9999'))
+
     monkeypatch.setattr(QMessageBox, 'exec', consent)
     monkeypatch.setattr(assistant.DesktopChats, 'create', create)
+    monkeypatch.setattr(assistant.DesktopChats, 'read', read)
 
     window = MainWindow('Osvanta Bus Log Analyzer', '00.00.99')
     panel = window.assistant_panel
@@ -156,13 +166,8 @@ def test_selected_project_reaches_native_chat_and_evidence_returns_to_plot(
         assert opened == [f'codex://threads/{thread_id}']
         assert project.name in confirmed[0] and str(project.roots[0]) in confirmed[0]
         response = lease._dispatch({'operation': 'osvanta_compare_events', 'arguments': ACTUATOR_KEYS})
-        identifier = response['data']['evidence'][0]['id']
+        evidence_holder['identifier'] = response['data']['evidence'][0]['id']
 
-        def read(_, chat, cancel):
-            assert chat == thread_id
-            return f'延迟 0.25 s [{identifier}]', (identifier, 'ev-9999')
-
-        monkeypatch.setattr(assistant.DesktopChats, 'read', read)
         panel.read_chat_btn.click()
         _wait(qapp, lambda: panel._desktop_request is None)
         assert panel.codex_evidence_list.count() == 1

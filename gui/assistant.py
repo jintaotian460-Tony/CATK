@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from PySide6.QtCore import QObject, QThread, Qt, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QThread, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -621,7 +621,8 @@ class AssistantPanel(QWidget):
         prompt = QMessageBox(self)
         prompt.setWindowTitle('共享到 Codex 桌面端')
         prompt.setTextFormat(Qt.TextFormat.PlainText)
-        prompt.setText('允许 Codex 模型读取当前捕获范围内的信号、单位和样本。\n'
+        prompt.setText('允许 Codex 模型读取当前捕获范围内的信号、单位和样本，'
+                       '并立即开始分析（通常几分钟）。\n'
                        '问题和工具结果可保存在 Codex 聊天历史中。撤销取数会关闭后续访问。')
         project_label = project.name if project else '不归入项目'
         roots = '\n'.join(map(str, project.roots)) if project else ''
@@ -647,7 +648,7 @@ class AssistantPanel(QWidget):
             return
         self._start_desktop(_DesktopRequest(threading.Event(), question=question,
                                           scope=self._shared_lease.scope, project=project),
-                            '正在创建 Codex 聊天…')
+                            'Codex 正在分析（几分钟，取消点「取消」）…')
 
     def _open_shared_chat(self) -> None:
         if QDesktopServices.openUrl(QUrl(chat_url(self._shared_chat_id))):
@@ -715,6 +716,9 @@ class AssistantPanel(QWidget):
             self._shared_question = request.question
             self._update_desktop_buttons()
             self._open_shared_chat()
+            # Pull the finished transcript next tick, so the finished share
+            # request stays observable and a pending read never races it.
+            QTimer.singleShot(0, self._read_shared_chat)
         else:
             self._fill_codex_projects(answer)
             self.codex_status('项目列表已刷新。')

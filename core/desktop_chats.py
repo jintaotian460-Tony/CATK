@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 
 from core.codex_bridge import BridgeError, Cancelled, JsonRpc, StdioTransport
@@ -24,6 +25,8 @@ MCP_NAME = 'osvanta_capture'
 # a live handshake probe (see _probe_version) and cached per machine, so a
 # desktop self-update heals itself instead of blocking on a source edit.
 VERIFIED_DESKTOP_VERSION = 'codex-cli 0.167.0-alpha.4.1'
+# One shared-analysis turn; the lease stays open only this long.
+MAX_TURN_SECONDS = 20 * 60
 TITLE = 'Osvanta 日志分析'
 MAX_QUESTION = 8_000
 EVIDENCE_ID = re.compile(r'\b(?:ev|src)-[1-9][0-9]*\b')
@@ -275,8 +278,46 @@ class DesktopChats:
                 ]},
             ]}, timeout=12)
             rpc.request('thread/name/set', {'threadId': thread_id, 'name': TITLE}, timeout=12)
+            self._run_turn(rpc, thread_id, question, cancel)
             transport.finish()
         return thread_id
+
+    def _run_turn(self, rpc, thread_id, question, cancel):
+        """Fire the analysis turn and wait for it. The desktop UI no longer
+        renders injected history, so without this the user opens an empty
+        chat; if the desktop refuses the turn, fall back to the old manual
+        path — the injected question stays in history for it."""
+        completed = None
+
+        def on_event(method, params):
+            nonlocal completed
+            if method == 'error' and not params.get('willRetry', False):
+                raise BridgeError(
+                    f'Codex 分析出错（{params.get("error")}）；聊天保留，可在 Codex 中继续。')
+            if method == 'turn/completed' and params.get('threadId') == thread_id:
+                completed = params.get('turn', {})
+
+        rpc.on_event = on_event
+        try:
+            rpc.request('turn/start', {
+                'threadId': thread_id,
+                'input': [{'type': 'text', 'text': question.strip()}],
+                'approvalPolicy': 'never',
+                'sandboxPolicy': {'type': 'readOnly', 'networkAccess': False},
+                'environments': [],
+            }, timeout=12)
+        except BridgeError:
+            return
+        deadline = time.monotonic() + MAX_TURN_SECONDS
+        while completed is None:
+            if cancel():
+                raise Cancelled('已取消。')
+            if time.monotonic() >= deadline:
+                raise BridgeError('Codex 分析超时；已撤销本次取数。')
+            rpc.pump(0.2)
+        if completed.get('status') != 'completed':
+            raise BridgeError(
+                f"Codex 分析未完成（{completed.get('status')}）；聊天保留，可在 Codex 中继续。")
 
     def read(self, thread_id, cancel):
         thread_id = str(UUID(thread_id))
