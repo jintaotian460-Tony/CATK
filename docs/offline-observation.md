@@ -21,7 +21,9 @@ application panels retain their existing behavior.
 - Y axes show units and ticks. Full signal names stay in the legend and axis tooltip.
 - Dotted green grid lines are independent of the text color, on dark and light plots.
 - The shared bottom ruler supports left-drag time panning and wheel zoom. The top
-  cursor handles move the linked cursors across all windows.
+  cursor handles move the linked cursors across all windows. Window height dividers
+  take the same background-adaptive colour as the ruler, so they stay visible on
+  dark and light plot backgrounds instead of following the desktop theme.
 - The header is a single recording-status row. Playback transport controls and
   their Follow view option are absent; the fixed 10 ms toolbar shortcut is removed.
   The ruler still resolves 10 ms and finer intervals when zoomed with the wheel.

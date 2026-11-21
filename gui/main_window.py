@@ -588,10 +588,14 @@ class MainWindow(QMainWindow):
         self.signal_dock.setWidget(self.signal_tree)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.signal_dock)
         self.signal_dock.setFloating(True)
+        # No minimize button: an owned floating window never minimizes to the
+        # taskbar — Windows folds it into a small strip at the window's bottom
+        # left, over the log tree, and its tiny restore box made the window
+        # hard to bring back. Close (×) and the Signals menu reopen instead.
         self.signal_dock.setWindowFlags(
             Qt.WindowType.Window | Qt.WindowType.CustomizeWindowHint
             | Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowSystemMenuHint
-            | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowMaximizeButtonHint
+            | Qt.WindowType.WindowMaximizeButtonHint
             | Qt.WindowType.WindowCloseButtonHint
         )
         self.signal_dock.resize(380, 620)

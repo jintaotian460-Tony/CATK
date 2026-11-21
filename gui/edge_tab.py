@@ -105,14 +105,16 @@ class EdgeTab(QWidget):
         super().leaveEvent(event)
         self.update()
 
-    def paintEvent(self, event):
-        palette = self.palette()
-        active = self.underMouse() or self._dragging
+    def _divider_color(self, active: bool) -> QColor:
         # Midlight, not Mid: against a dark plot background a Mid line was
         # one invisible pixel, and a divider nobody sees is a feature nobody
         # finds — however well it works once found.
-        color = palette.color(QPalette.ColorRole.Highlight if active
-                              else QPalette.ColorRole.Midlight)
+        return QColor(self.palette().color(QPalette.ColorRole.Highlight if active
+                                           else QPalette.ColorRole.Midlight))
+
+    def paintEvent(self, event):
+        active = self.underMouse() or self._dragging
+        color = self._divider_color(active)
         painter = QPainter(self)
         painter.setPen(QPen(QColor(color), 2 if active else 1))
         if self._orientation == Qt.Orientation.Horizontal:

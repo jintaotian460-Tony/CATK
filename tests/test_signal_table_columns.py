@@ -173,3 +173,11 @@ def test_the_choice_is_remembered(qapp, monkeypatch, tmp_path):
 def test_std_dev_says_how_it_is_computed(panel):
     tip = _action(panel, 'Std dev').toolTip()
     assert 'Standard deviation' in tip and 'divided by their number' in tip
+
+
+def test_an_enum_label_elided_in_the_cell_is_reachable_on_hover(shown):
+    """The cursor columns are narrow, so a label value may read "BO_Seat…" in
+    the cell. Its tooltip carries the whole value (the window lists copy it)."""
+    cell = shown.table.item(shown._row_lookup['Gear'], 2)
+    assert cell.text() == 'L1'                       # Gear's label at t=3
+    assert cell.toolTip() == cell.text()             # the whole value on hover

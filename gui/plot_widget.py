@@ -3752,15 +3752,21 @@ class PlotPanel(QWidget):
                     cell.setText('未采集')
                     cell.setToolTip('Not collected in this CSV observation; no value is substituted.')
                     continue
-                cell.setToolTip(f'Sample age: {age:.3f} s' if age is not None else '')
+                age_tip = f'Sample age: {age:.3f} s' if age is not None else ''
                 value = plotted.series.display_value_at(idx)
                 if isinstance(value, str):
                     cell.setText(value)
+                    # The cursor columns are narrow, so a long enum label is
+                    # elided to "BO_Seat…" in the cell. Keep the whole value
+                    # readable on hover — also in the window lists, whose
+                    # tooltips are copied from these cells.
+                    cell.setToolTip(f'{value}\n{age_tip}' if age_tip else value)
                 else:
                     try:
                         cell.setText(f"{float(value):.3f}")
                     except (TypeError, ValueError):
                         cell.setText(str(value))
+                    cell.setToolTip(age_tip)
             self._update_delta()
         finally:
             self.table.setUpdatesEnabled(True)
@@ -4154,6 +4160,8 @@ class PlotPanel(QWidget):
                     axis.setTextPen(pg.mkPen(cursor_color))
                     axis.setLabel(axis.labelText, color=cursor_color)
             self.window_ruler.update()
+            for grip in self._window_grips:
+                grip.update()
         for line in (self.v_line, self.v_line2,
                      *self._stacked_c1_lines, *self._stacked_c2_lines):
             line.set_color(cursor_color)

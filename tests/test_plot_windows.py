@@ -672,3 +672,97 @@ def test_window_dividers_are_visible_full_width_drag_targets(windows, qapp):
         expected = panel.glw.mapFromScene(QPointF(0, bottom)).y()
         assert grip.y() == pytest.approx(expected - grip.THICKNESS // 2, abs=1)
         assert '高度' in grip.toolTip()
+
+
+def _luminance(color) -> float:
+    from PySide6.QtGui import QColor
+    if isinstance(color, str):
+        color = QColor(color)
+    return (0.299*color.red() + 0.587*color.green() + 0.114*color.blue()) / 255
+
+
+@pytest.mark.parametrize('background', ['#000000', '#353535', '#ffffff'])
+def test_window_dividers_contrast_with_the_plot_background(windows, qapp, background):
+    """A divider nobody can see is a divider nobody drags. Over the plot area
+    its line takes the background-adaptive colour the ruler already uses, and
+    follows a background change without a rebuild."""
+    panel = windows
+    panel.add_series(series('A').key, series('A'))
+    panel.new_window()
+    qapp.processEvents()
+    grip = panel._window_grips[0]
+
+    def painted_colours():
+        # grab() fills the widget's own background first, so judge the divider
+        # by its line: the centre row runs the full width in one colour.
+        image = grip.grab().toImage()
+        row = image.height() // 2
+        colours = {image.pixelColor(x, row).name() for x in range(image.width())}
+        assert len(colours) == 1, colours
+        return colours
+
+    panel.set_background_color(background)
+    settle(qapp)
+    base = _luminance(background)
+    for colour in painted_colours():
+        assert abs(_luminance(colour) - base) >= .5, colour
+
+    panel.set_background_color('#ffffff' if background != '#ffffff' else '#000000')
+    settle(qapp)
+    base = 1 - base
+    for colour in painted_colours():
+        assert abs(_luminance(colour) - base) >= .5, colour
+
+
+def _label_series(name, labels):
+    return SignalSeries(channel=1, message_name='Message', message_id=1, signal_name=name,
+                        unit='', timestamps=np.arange(len(labels), dtype=float),
+                        values=np.arange(len(labels), dtype=float),
+                        raw_values=list(labels), has_labels=True)
+
+
+def test_cursor_columns_widen_until_enum_labels_read_in_full(windows, qapp):
+    """Only the top window's list has a header to drag, so a long enum label
+    like "BO_SeatOccupancySt_Free" used to read "BO_SeatO…" in every list.
+    The cursor columns now widen to the label — one width for all windows."""
+    panel = windows
+    state = 'BO_SeatOccupancySt_Free'
+    signal = _label_series('SIN_SeatOccupancySt_FL', [state] * 11)
+    panel.add_series(signal.key, signal)
+    panel.new_window()
+    panel.add_series(series('Plain').key, series('Plain'))
+    panel.set_cursor1_enabled(True)
+    panel.move_cursor1(5)
+    settle(qapp)
+    trees = [tree for _widget, tree in panel._window_widgets.values()]
+    cap = max(plot_windows._CURSOR_COLUMN_FLOOR,
+              panel.window_list_grip.column_width() - plot_windows._SIGNAL_NAME_FLOOR)
+    wanted = min(trees[0].fontMetrics().horizontalAdvance(state) + 16, cap)
+    assert wanted > plot_windows._CURSOR_COLUMN_FLOOR
+    assert {tree.columnWidth(1) for tree in trees} == {wanted}
+    item = trees[0].rows[signal.key]
+    assert item.text(1) == state
+    assert state in item.toolTip(1)          # hover shows the whole value too
+
+
+def test_cursor_columns_stop_at_the_signal_name_floor_and_shrink_back(windows, qapp):
+    panel = windows
+    signal = _label_series('Long', ['AnEnumStateNameFarTooLongForAnyColumn'] * 11)
+    panel.add_series(signal.key, signal)
+    panel.set_cursor1_enabled(True)
+    panel.move_cursor1(5)
+    settle(qapp)
+    cap = max(plot_windows._CURSOR_COLUMN_FLOOR,
+              panel.window_list_grip.column_width() - plot_windows._SIGNAL_NAME_FLOOR)
+    assert next(iter(panel._window_widgets.values()))[1].columnWidth(1) == cap
+    panel.remove_series(signal.key)
+    plain = series('Plain')
+    panel.add_series(plain.key, plain)
+    panel.move_cursor1(5)
+    settle(qapp)
+    tree = next(iter(panel._window_widgets.values()))[1]
+    # Numbers never widen past what reading them needs (the window font needs
+    # a little more than the old fixed 82 px for a 6-digit value).
+    number = max(plot_windows._CURSOR_COLUMN_FLOOR,
+                 tree.fontMetrics().horizontalAdvance('50.000') + 16)
+    assert tree.columnWidth(1) == number

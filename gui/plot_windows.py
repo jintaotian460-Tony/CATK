@@ -108,6 +108,16 @@ class HeightGrip(EdgeTab):
         self.dragStarted.connect(self.begin_resize)
         self.dragged.connect(self.resize_pair)
 
+    def _divider_color(self, active):
+        # Over the plot area a theme Midlight can be a near-invisible grey on
+        # the plot background, and a system dark palette makes it worse. The
+        # ruler already picks its colour from the background; the divider
+        # between windows does the same, so it stays out of the theme's hands.
+        if active:
+            return super()._divider_color(active)
+        from gui.plot_widget import _cursor_color_on
+        return QColor(_cursor_color_on(self.panel.background_color()))
+
     def begin_resize(self):
         self.panel._push_undo()
         self.heights = list(self.panel._window_heights)
@@ -675,9 +685,18 @@ def arrange(panel):
         panel._window_arranging = False
 
 
+#: Cursor columns start just wide enough for numbers. Label values (DBC
+#: enums, MDF text) widen them so the whole value reads in the list; the
+#: signal-name column keeps this floor before a cursor column may grow more.
+_CURSOR_COLUMN_FLOOR = 82
+_SIGNAL_NAME_FLOOR = 140
+
+
 def refresh_values(panel):
     cursors = ((1, panel._cursor1_enabled, panel.v_line),
                (2, panel._cursor2_enabled, panel.v_line2))
+    trees = [tree for _widget, tree in panel._window_widgets.values()]
+    needed = {column: _CURSOR_COLUMN_FLOOR for column, _enabled, _line in cursors}
     for widget, tree in panel._window_widgets.values():
         repaint = False
         for column, enabled, line in cursors:
@@ -695,10 +714,24 @@ def refresh_values(panel):
                     item.setText(column, text)
                     repaint = True
                 item.setToolTip(column, cell.toolTip() if cell is not None else '')
+                needed[column] = max(needed[column],
+                                     tree.fontMetrics().horizontalAdvance(text) + 16)
         if repaint:
             # The view may only repaint the cursor lines or upper trees on its
             # own. Invalidate the embedded list at its actual scene position.
             widget.graphicsProxyWidget().update()
+    # Only the top window's list has a header to drag, so the cursor columns
+    # fit their own content instead: every list takes the same width, wide
+    # enough for the widest label any of them shows at the cursors.
+    available = panel.window_list_grip.column_width()
+    shown = sum(1 for _column, enabled, _line in cursors if enabled)
+    for column, enabled, _line in cursors:
+        cap = max(_CURSOR_COLUMN_FLOOR,
+                  (available - _SIGNAL_NAME_FLOOR) // max(1, shown))
+        width = min(needed[column], cap)
+        for tree in trees:
+            if tree.columnWidth(column) != width:
+                tree.setColumnWidth(column, width)
 
 
 def refresh_signal_style(panel, key):

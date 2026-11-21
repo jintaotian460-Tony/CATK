@@ -271,7 +271,7 @@ def test_log_tree_file_operations_never_overwrite_and_reject_zip_escape(
         qapp.processEvents()
 
 
-def test_signal_titlebar_controls_minimise_restore_maximise_and_hide(qapp, monkeypatch):
+def test_signal_titlebar_has_no_minimise_but_restores_maximises_and_hides(qapp, monkeypatch):
     from PySide6.QtCore import Qt
     from gui.main_window import MainWindow
     monkeypatch.setattr(QMessageBox, 'warning', Mock())
@@ -281,7 +281,10 @@ def test_signal_titlebar_controls_minimise_restore_maximise_and_hide(qapp, monke
         panel = window.signal_dock
         panel.show()
         flags = panel.windowFlags()
-        for flag in (Qt.WindowType.WindowMinimizeButtonHint, Qt.WindowType.WindowMaximizeButtonHint, Qt.WindowType.WindowCloseButtonHint):
+        # No minimize button: minimized, an owned floating window folds into a
+        # strip over the log tree instead of going to the taskbar.
+        assert not flags & Qt.WindowType.WindowMinimizeButtonHint
+        for flag in (Qt.WindowType.WindowMaximizeButtonHint, Qt.WindowType.WindowCloseButtonHint):
             assert flags & flag
         assert not flags & Qt.WindowType.FramelessWindowHint
         panel.showMinimized()

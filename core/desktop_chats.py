@@ -14,12 +14,16 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 
 from core.codex_bridge import BridgeError, Cancelled, JsonRpc, StdioTransport
 
 MCP_NAME = 'osvanta_capture'
-VERIFIED_DESKTOP_VERSION = 'codex-cli 0.167.0-alpha.3.2'
+# Baseline desktop build, verified end-to-end. Newer builds are accepted after
+# a live handshake probe (see _probe_version) and cached per machine, so a
+# desktop self-update heals itself instead of blocking on a source edit.
+VERIFIED_DESKTOP_VERSION = 'codex-cli 0.167.0-alpha.4.1'
 TITLE = 'Osvanta 日志分析'
 MAX_QUESTION = 8_000
 EVIDENCE_ID = re.compile(r'\b(?:ev|src)-[1-9][0-9]*\b')
@@ -50,6 +54,7 @@ class DesktopProject:
 class DesktopChats:
     def __init__(self, directory: Path, *, home=None, executable=None):
         self.directory = directory.resolve()
+        self._version_cache = self.directory.parent / 'verified-desktop-versions.json'
         self.home = (Path(home or os.environ.get('OSVANTA_DESKTOP_CODEX_HOME')
                           or Path.home() / '.codex').resolve())
         self.executable = executable or os.environ.get('OSVANTA_DESKTOP_CODEX_EXE')
@@ -112,6 +117,59 @@ class DesktopChats:
         return (adapter.is_absolute() and adapter.name == 'osvanta_capture_mcp.py'
                 and adapter.parent.name == 'tools' and adapter.is_file())
 
+    def _verified_versions(self):
+        try:
+            with self._version_cache.open('r', encoding='utf-8') as stream:
+                data = json.load(stream)
+        except (OSError, ValueError):
+            return set()
+        if not isinstance(data, list):
+            return set()
+        return {item for item in data if isinstance(item, str)}
+
+    def _remember_version(self, version):
+        versions = self._verified_versions()
+        if version in versions:
+            return
+        versions.add(version)
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                    dir=self._version_cache.parent, prefix='verified-desktop-',
+                    suffix='.tmp', delete=False, mode='w', encoding='utf-8') as stream:
+                json.dump(sorted(versions), stream)
+                temporary = Path(stream.name)
+            os.replace(temporary, self._version_cache)
+            temporary = None
+        except OSError:
+            pass  # the probe already passed; caching is best-effort
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def _probe_version(self, rpc, version, cancel):
+        """Unverified desktop build: run the RPC calls we depend on and check
+        the response shapes before trusting it; pass means cache the build."""
+        try:
+            page = rpc.request('project/list', {'cursor': None, 'limit': 100}, timeout=12)
+            data = page.get('data') if isinstance(page, dict) else None
+            if not isinstance(data, list):
+                raise ValueError('project/list 未返回项目列表')
+            for item in data:
+                if (not isinstance(item, dict) or not isinstance(item.get('id'), str)
+                        or not isinstance(item.get('name'), str)
+                        or not isinstance(item.get('roots'), list)):
+                    raise ValueError('project/list 返回的项目结构不完整')
+        except Cancelled:
+            raise
+        except Exception as exc:
+            raise BridgeError(
+                f'Codex 桌面端已升级到 {version}，与已验证版本 {VERIFIED_DESKTOP_VERSION} '
+                f'握手不通过（{exc}），共享聊天暂不可用。') from exc
+        if cancel():
+            raise Cancelled('已取消。')
+        self._remember_version(version)
+
     @contextmanager
     def _connect(self, servers, cancel):
         if cancel():
@@ -129,8 +187,9 @@ class DesktopChats:
                 text=True, encoding='utf-8', errors='replace', timeout=5, check=True,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
             )
-            if checked.stdout.strip() != VERIFIED_DESKTOP_VERSION:
-                raise BridgeError('当前 Codex 桌面端版本尚未验证共享聊天。')
+            version = checked.stdout.strip()
+            verified = (version == VERIFIED_DESKTOP_VERSION
+                        or version in self._verified_versions())
             if cancel():
                 raise Cancelled('已取消。')
             overrides = ['features.hooks=false', 'features.plugins=false', 'features.apps=false',
@@ -152,6 +211,8 @@ class DesktopChats:
                 'capabilities': {'experimentalApi': True},
             }, timeout=12)
             rpc.notify('initialized')
+            if not verified:
+                self._probe_version(rpc, version, cancel)
             yield rpc, transport, str(work)
         finally:
             transport.close()
