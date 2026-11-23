@@ -12,7 +12,25 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?logo=windows)
 ![License](https://img.shields.io/badge/License-MPL--2.0-green)
-![Release](https://img.shields.io/github/v/release/osvanta/bus-log-analyzer)
+![Release](https://img.shields.io/github/v/release/jintaotian460-Tony/bus-log-analyzer)
+
+## About this fork
+
+This repository is the maintained fork of
+[osvanta/bus-log-analyzer](https://github.com/osvanta/bus-log-analyzer).
+
+- `main` follows the upstream baseline; only upstream merges land here.
+- Ongoing development lives on [`feat/telemetry-playback`](https://github.com/jintaotian460-Tony/bus-log-analyzer/blob/feat/telemetry-playback/README.md), and every release in this fork's [Releases](../../releases) is built from that branch.
+
+What the fork adds on top of upstream:
+
+- **Offline telemetry observation** — a compact multi-window observation area with linked cursors, a shared draggable time ruler down to 10 ms and finer, per-signal **Stale after** marking, and explicit clock interpretations for cloud-converted BLF recordings (standard UTC vs. local wall-clock header fields).
+- **Projects and additional CSV signals** — reusable project profiles (DBC/LDF matrix sets with fingerprints, CSV signal sources with column mapping and time alignment, freshness defaults), and background conversion of matching cloud CSV exports into cached playback BLFs (`File ▸ Save playback BLF…`).
+- **Log Explorer** — a project-rooted folder tree with background copy/paste/ZIP operations, and floating signal windows.
+- **Desktop assistant** — an in-app chat backed by a packaged capture MCP that can drive and read the open analysis session, including automatic analysis turns for shared sessions.
+- Portable Windows builds are attached to each release. **DBC/LDF databases, recorded vehicle data, and personal project profiles are never included** in this repository or in the release packages — configure your own databases after extracting.
+
+See the [`feat/telemetry-playback` README](https://github.com/jintaotian460-Tony/bus-log-analyzer/blob/feat/telemetry-playback/README.md) for the complete feature documentation.
 
 ## Screenshots
 
