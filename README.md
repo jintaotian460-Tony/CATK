@@ -12,7 +12,7 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?logo=windows)
 ![License](https://img.shields.io/badge/License-MPL--2.0-green)
-![Release](https://img.shields.io/github/v/release/jintaotian460-Tony/bus-log-analyzer)
+![Release](https://img.shields.io/github/v/release/jintaotian460-Tony/CATK)
 
 ## About this fork
 
@@ -20,7 +20,7 @@ This repository is the maintained fork of
 [osvanta/bus-log-analyzer](https://github.com/osvanta/bus-log-analyzer).
 
 - `main` follows the upstream baseline; only upstream merges land here.
-- Ongoing development lives on [`feat/telemetry-playback`](https://github.com/jintaotian460-Tony/bus-log-analyzer/blob/feat/telemetry-playback/README.md), and every release in this fork's [Releases](../../releases) is built from that branch.
+- Ongoing development lives on [`feat/telemetry-playback`](https://github.com/jintaotian460-Tony/CATK/blob/feat/telemetry-playback/README.md), and every release in this fork's [Releases](../../releases) is built from that branch.
 
 What the fork adds on top of upstream:
 
@@ -30,7 +30,7 @@ What the fork adds on top of upstream:
 - **Desktop assistant** — an in-app chat backed by a packaged capture MCP that can drive and read the open analysis session, including automatic analysis turns for shared sessions.
 - Portable Windows builds are attached to each release. **DBC/LDF databases, recorded vehicle data, and personal project profiles are never included** in this repository or in the release packages — configure your own databases after extracting.
 
-See the [`feat/telemetry-playback` README](https://github.com/jintaotian460-Tony/bus-log-analyzer/blob/feat/telemetry-playback/README.md) for the complete feature documentation.
+See the [`feat/telemetry-playback` README](https://github.com/jintaotian460-Tony/CATK/blob/feat/telemetry-playback/README.md) for the complete feature documentation.
 
 ## Screenshots
 
