@@ -28,9 +28,16 @@ def packaged(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, 'frozen', True, raising=False)
     monkeypatch.setattr(sys, 'executable', str(install / 'BusLogAnalyzer.exe'))
     monkeypatch.setenv('LOCALAPPDATA', str(local))
-    for name in (app_data.DATA_DIR_ENV_VAR, 'OSVANTA_APP_LOG', 'OSVANTA_CRASH_LOG'):
+    for name in (
+        app_data.DATA_DIR_ENV_VAR,
+        app_data.LEGACY_DATA_DIR_ENV_VAR,
+        'CATK_APP_LOG',
+        'CATK_CRASH_LOG',
+        'OSVANTA_APP_LOG',
+        'OSVANTA_CRASH_LOG',
+    ):
         monkeypatch.delenv(name, raising=False)
-    return install, local / 'Osvanta' / 'BusLogAnalyzer'
+    return install, local / 'CATK'
 
 
 def test_packaged_logs_and_settings_are_in_the_users_folder(packaged):
@@ -117,10 +124,46 @@ def test_it_department_can_name_the_folder(packaged, monkeypatch, tmp_path):
 
 def test_from_source_everything_stays_next_to_app_py(monkeypatch):
     monkeypatch.delattr(sys, 'frozen', raising=False)
-    for name in (app_data.DATA_DIR_ENV_VAR, 'OSVANTA_APP_LOG', 'OSVANTA_CRASH_LOG'):
+    for name in (
+        app_data.DATA_DIR_ENV_VAR,
+        app_data.LEGACY_DATA_DIR_ENV_VAR,
+        'CATK_APP_LOG',
+        'CATK_CRASH_LOG',
+        'OSVANTA_APP_LOG',
+        'OSVANTA_CRASH_LOG',
+    ):
         monkeypatch.delenv(name, raising=False)
     root = Path(app_data.__file__).resolve().parents[1]
 
     assert app_data.folder() == root
     assert app_log.default_log_path() == root / app_log.LOG_NAME
     assert crash_log.default_log_path() == root / crash_log.LOG_NAME
+
+
+def test_catk_data_dir_overrides_legacy_env_and_falls_back(packaged, monkeypatch, tmp_path):
+    legacy_central = tmp_path / 'legacy_central'
+    catk_central = tmp_path / 'catk_central'
+    monkeypatch.setenv(app_data.LEGACY_DATA_DIR_ENV_VAR, str(legacy_central))
+    assert app_data.folder() == legacy_central
+    monkeypatch.setenv(app_data.DATA_DIR_ENV_VAR, str(catk_central))
+    assert app_data.folder() == catk_central
+
+
+def test_first_start_seeds_from_legacy_osvanta_folder_non_destructively(packaged):
+    _, user = packaged
+    legacy = app_data.legacy_per_user_folder()
+    legacy.mkdir(parents=True)
+    legacy_settings = legacy / 'osvanta_user_settings.json'
+    legacy_agents = legacy / 'assistant-project-agents.json'
+    legacy_settings.write_text('{"theme": "dark"}', encoding='utf-8')
+    legacy_agents.write_text('{"agents": []}', encoding='utf-8')
+    user.mkdir(parents=True)
+    existing_settings = user / 'osvanta_user_settings.json'
+    existing_settings.write_text('{"theme": "light"}', encoding='utf-8')
+
+    assert app_data.folder() == user
+    assert existing_settings.read_text(encoding='utf-8') == '{"theme": "light"}'
+    assert (user / 'assistant-project-agents.json').read_text(encoding='utf-8') == '{"agents": []}'
+    # Legacy folder remains intact for older packaged versions.
+    assert legacy_settings.read_text(encoding='utf-8') == '{"theme": "dark"}'
+    assert legacy_agents.read_text(encoding='utf-8') == '{"agents": []}'

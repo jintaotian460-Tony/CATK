@@ -5,7 +5,7 @@
 # Copyright (c) 2025-2026 Dinakaran Ganesan
 
 """
-Osvanta Bus Log Analyzer splash screen.
+CATK splash screen.
 
 Displays the splash image while the application is initialising.
 Overlays:
@@ -120,7 +120,7 @@ class SplashScreen(QLabel):
             Qt.WindowType.WindowMinimizeButtonHint |
             Qt.WindowType.CustomizeWindowHint
         )
-        self.setWindowTitle('Osvanta Bus Log Analyzer — Starting…')
+        self.setWindowTitle('CATK — Starting…')
         self.setPixmap(scaled)
         self.setFixedSize(scaled.size())
         if screen:
@@ -139,7 +139,7 @@ class SplashScreen(QLabel):
     def set_status(self, message: str) -> None:
         """Update the loading status text shown in the frosted-glass panel."""
         self._status_text = message
-        self.setWindowTitle(f'Osvanta Bus Log Analyzer — {message}')
+        self.setWindowTitle(f'CATK — {message}')
         self._render()
         QApplication.processEvents()
 

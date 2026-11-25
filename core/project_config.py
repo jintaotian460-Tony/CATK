@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
+
 """Reusable project settings, separate from a measurement session."""
 from __future__ import annotations
 
@@ -7,6 +13,7 @@ import os
 from pathlib import Path
 
 PROJECT_KIND = 'osvanta.project'
+SUPPORTED_PROJECT_KINDS = ('osvanta.project', 'catk.project')
 PROJECT_SCHEMA = 1
 
 
@@ -91,8 +98,8 @@ def load_project(path):
     data = json.loads(path.read_text(encoding='utf-8-sig'))
     if not isinstance(data, dict):
         raise ValueError('Project profile must be an object')
-    if data.get('kind') != PROJECT_KIND or data.get('schema_version') != PROJECT_SCHEMA:
-        raise ValueError('Unsupported Osvanta project format or schema version')
+    if data.get('kind') not in SUPPORTED_PROJECT_KINDS or data.get('schema_version') != PROJECT_SCHEMA:
+        raise ValueError('Not a CATK/Osvanta project profile')
     data['project'] = normalise_project(data.get('project'), path.parent)
     channels = data.get('channel_config', {})
     channels['channels'] = {k: _path(v, path.parent, False) for k, v in channels.get('channels', {}).items()}

@@ -38,5 +38,5 @@ cursor). The dark plot background follows the user's CANape screenshots; the off
 quick-start example also illustrates a light background. No proprietary artwork or
 CANape code is incorporated.
 
-This is an Osvanta presentation change, not CANape file compatibility or online
+This is a CATK presentation change, not CANape file compatibility or online
 measurement/calibration support. Removed legacy layout choices are not reintroduced.

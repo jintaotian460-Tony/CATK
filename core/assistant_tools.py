@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """The only data path an analysis agent gets: read-only tools over one
 frozen snapshot. Every number in a tool reply was computed locally; every

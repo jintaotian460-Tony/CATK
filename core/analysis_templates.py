@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
+
 """Project-scoped analysis recipes. Templates contain no measurement data."""
 import copy
 import json
@@ -134,8 +140,8 @@ def write_library(profile, library, expected=None):
     path = Path(profile)
     original = path.read_bytes()
     data = json.loads(original.decode('utf-8-sig'))
-    if data.get('kind') != 'osvanta.project' or data.get('schema_version') != 1:
-        raise ValueError('Not an Osvanta project profile')
+    if data.get('kind') not in ('osvanta.project', 'catk.project') or data.get('schema_version') != 1:
+        raise ValueError('Not a CATK/Osvanta project profile')
     current = normalise_library(data['project'].get('analysis_templates', {}))
     if expected is not None and current != normalise_library(expected):
         raise ValueError('工程模板已被其他窗口修改，请重新打开工程后再保存。')

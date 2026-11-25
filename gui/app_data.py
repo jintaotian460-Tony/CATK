@@ -3,12 +3,13 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
-r"""Where the application keeps its logs and settings.
+r"""Where CATK keeps its logs, settings, and caches.
 
 The packaged application keeps them per user::
 
-    %LOCALAPPDATA%\Osvanta\BusLogAnalyzer\
+    %LOCALAPPDATA%\CATK\
         osvanta_user_settings.json      preferences
         osvanta_temp_plot_config.json   the last plot layout
         logs\
@@ -22,13 +23,14 @@ Windows lets only the user, and administrators, read their own
 %LOCALAPPDATA%. It is also writable without elevation, so an installation in
 Program Files no longer sends the logs to the temp folder.
 
-OSVANTA_DATA_DIR names another folder, for an IT department that keeps user
-data somewhere central. Run from source, everything stays next to app.py,
-where developers look for it.
+CATK_DATA_DIR (or legacy OSVANTA_DATA_DIR) names another folder, for an IT
+department that keeps user data somewhere central. Run from source, everything
+stays next to app.py, where developers look for it.
 
-The first start that uses the folder moves in the files earlier versions
-kept next to the executable, so neither the settings nor the last logs are
-lost, and none stay behind where others can read them.
+On first launch in %LOCALAPPDATA%\CATK, files from an earlier
+%LOCALAPPDATA%\Osvanta\BusLogAnalyzer installation are seeded read-only (copied
+without modifying or deleting the original folder), and any legacy files next
+to the executable are moved in as before.
 """
 
 from __future__ import annotations
@@ -38,10 +40,12 @@ import shutil
 import sys
 from pathlib import Path
 
-DATA_DIR_ENV_VAR = 'OSVANTA_DATA_DIR'
+DATA_DIR_ENV_VAR = 'CATK_DATA_DIR'
+LEGACY_DATA_DIR_ENV_VAR = 'OSVANTA_DATA_DIR'
 
-_VENDOR = 'Osvanta'
-_PRODUCT = 'BusLogAnalyzer'
+_APP_FOLDER = 'CATK'
+_LEGACY_VENDOR = 'Osvanta'
+_LEGACY_PRODUCT = 'BusLogAnalyzer'
 _LOGS = 'logs'
 
 # What versions up to v00.02.02 kept next to the executable, and the folder
@@ -55,6 +59,17 @@ _EARLIER_FILES = {
     'BLA_crash.log.1': _LOGS,
 }
 
+# Settings and caches copied (never moved) from the legacy per-user folder on
+# first start so upgrading users keep their preferences without collisions.
+_LEGACY_SEED_FILES = (
+    'osvanta_user_settings.json',
+    'osvanta_temp_plot_config.json',
+    'osvanta_last_session.json',
+    'assistant-codex-project.txt',
+    'assistant-project-agents.json',
+    'verified-desktop-versions.json',
+)
+
 
 def _executable_folder() -> Path:
     if getattr(sys, 'frozen', False):
@@ -62,21 +77,34 @@ def _executable_folder() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+def _local_app_data_root() -> Path:
+    local = os.environ.get('LOCALAPPDATA')
+    return Path(local) if local else Path.home() / 'AppData' / 'Local'
+
+
+def legacy_per_user_folder() -> Path:
+    """Previous per-user data path from upstream/earlier CATK builds."""
+    return _local_app_data_root() / _LEGACY_VENDOR / _LEGACY_PRODUCT
+
+
+_legacy_per_user_folder = legacy_per_user_folder
+
+
 def per_user_folder() -> Path:
     """Per-user data path, including for features run from a source checkout."""
-    if os.environ.get(DATA_DIR_ENV_VAR):
-        return Path(os.environ[DATA_DIR_ENV_VAR])
-    local = os.environ.get('LOCALAPPDATA')
-    root = Path(local) if local else Path.home() / 'AppData' / 'Local'
-    return root / _VENDOR / _PRODUCT
+    override = os.environ.get(DATA_DIR_ENV_VAR) or os.environ.get(LEGACY_DATA_DIR_ENV_VAR)
+    if override:
+        return Path(override)
+    return _local_app_data_root() / _APP_FOLDER
 
 
 def folder() -> Path:
-    """The settings folder, created, with earlier versions' files moved in.
+    """The settings folder, created, with earlier versions' files migrated.
 
-    Next to app.py when run from source, unless OSVANTA_DATA_DIR is set.
+    Next to app.py when run from source, unless CATK_DATA_DIR / OSVANTA_DATA_DIR is set.
     """
-    if not getattr(sys, 'frozen', False) and not os.environ.get(DATA_DIR_ENV_VAR):
+    override = os.environ.get(DATA_DIR_ENV_VAR) or os.environ.get(LEGACY_DATA_DIR_ENV_VAR)
+    if not getattr(sys, 'frozen', False) and not override:
         return _executable_folder()
     path = per_user_folder()
     # The logs folder marks the first start, not the folder itself: the
@@ -88,6 +116,8 @@ def folder() -> Path:
             return path  # opening a file there fails, and the caller copes
         if getattr(sys, 'frozen', False):
             _move_earlier_files(_executable_folder(), path)
+        if not override:
+            _seed_from_legacy_folder(legacy_per_user_folder(), path)
     return path
 
 
@@ -102,6 +132,20 @@ def logs_folder() -> Path:
     except OSError:
         pass
     return path
+
+
+def _seed_from_legacy_folder(legacy: Path, target: Path) -> None:
+    """Copy existing preferences/caches from the legacy per-user folder. Never raises."""
+    if not legacy.is_dir():
+        return
+    for name in _LEGACY_SEED_FILES:
+        src = legacy / name
+        dst = target / name
+        try:
+            if src.is_file() and not dst.exists():
+                shutil.copy2(src, dst)
+        except OSError:
+            pass
 
 
 def _move_earlier_files(source: Path, target: Path) -> None:

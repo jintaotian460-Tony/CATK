@@ -1,177 +1,109 @@
-# Osvanta Bus Log Analyzer
+# CATK
 
-> A portable Windows application for loading automotive measurements, decoding CAN signals, inspecting raw frames, and plotting signal data interactively.
-
-> **User guide:** [osvanta.github.io/bus-log-analyzer](https://osvanta.github.io/bus-log-analyzer/),
-> or **Help ▸ Getting started** (`F1`) in the application.
-
-> Formerly released as **CANScope**. The repository moved to
-> [github.com/osvanta/bus-log-analyzer](https://github.com/osvanta/bus-log-analyzer)
-> in August 2026.
+> **CAN/LIN Automotive Telemetry & Bus Log Analyzer** — a portable, zero-install Windows application for loading CAN/LIN measurements, decoding bus & cloud telemetry logs, inspecting raw frames, and running evidence-backed signal analysis.
+>
+> Maintained fork of [Osvanta Bus Log Analyzer](https://github.com/osvanta/bus-log-analyzer) (`MPL-2.0`).
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey?logo=windows)
 ![License](https://img.shields.io/badge/License-MPL--2.0-green)
-![Release](https://img.shields.io/github/v/release/osvanta/bus-log-analyzer)
+![Release](https://img.shields.io/github/v/release/jintaotian460-Tony/CATK)
 
-## Screenshots
+---
 
-The maintained fork uses a compact offline multi-window observation area with local
-signal legends, unit-only Y axes, linked cursors and a shared draggable time ruler.
-See [offline observation layout and reference](docs/offline-observation.md).
+## Why CATK
 
-Stacked plot:
-<img width="2299" height="1588" alt="Stacked plot" src="https://github.com/user-attachments/assets/57baedc2-0382-4f63-a7e9-cc786e18ded8" />
+CATK builds on the upstream `BLF / ASC / TRC / MDF4 / CSV` decoding & plotting core and adds three engineering workflows built for real vehicle calibration and cloud-telemetry triage:
 
+1. **Compact Multi-Window Offline Observation** ([reference](docs/offline-observation.md))
+   - CANape-style compact multi-window graphs with per-window light signal legends (`信号 / C1 / C2` column header on the top window only), unit-only Y axes (`共轴` or `独立轴` per window), linked dual cursors, and a shared draggable bottom time ruler (wheel zoom down to 10 ms and finer intervals).
+   - Integer-pixel line widths (`1`, `2`, `3`, `4`, `5`, `6`, `8 px` or `Auto`), adaptive original sample point inspection (`稀疏显示，放大查看全部` → `全量（当前视图）`), drag-and-drop signal moves across windows, **Exact-Name Signal Inheritance** across log switches, and reusable project **Analysis Templates**.
 
-Multiple Axis plot:
-<img width="2214" height="1590" alt="multi-axis plot" src="https://github.com/user-attachments/assets/7d3ef351-1b02-45e0-85f5-4dfd1217ad6e" />
+2. **Project Profiles, Cloud CSV → Self-Contained Playback BLF & Freshness**
+   - **Reusable Project Profiles** (`File ▸ Open/Save project`, `File ▸ Project settings`) store DBC/LDF channel mappings, supplemental physical CSV sources (`{measurement_stem}.csv` + explicit UTC/wall-clock alignment), freshness defaults, and analysis templates separately from any recording.
+   - **Cloud Telemetry BLF Reconstruction** (`File ▸ Save playback BLF…`): converts cloud-exported physical CSVs into single-file BLF logs carrying standard CAN/CAN-FD/LIN frame objects alongside `GLOBAL_MARKER` sparse/missing-observation records and SHA-256 locked DBC contracts — reopening needs no sidecar CSV or external DBC.
+   - **Per-signal Freshness (`Stale after`) & Clock Modes**: explicitly switches display between `BLF UTC → local` and `Cloud local wall time` (preventing double timezone shifts on cloud-converted BLFs), while shading stale intervals and reporting `Stale` / `No data` instead of silently holding outdated samples.
+   - **Log Explorer**: project-rooted folder browser with background copy/paste/ZIP compress/extract (ZipSlip-safe) and Recycle Bin delete, plus floating **Signals** window.
 
-Trace, the raw CAN and LIN frames:
-<img width="1543" height="1019" alt="CANScope_RawCAN Frame" src="https://github.com/user-attachments/assets/69ad9749-ecec-445d-a31f-4b47901855cf" />
+3. **Bounded Local & Agentic Analysis Assistant (with `ProjectAgent` Traceability)**
+   - **Local Deterministic Analyzer**: computes stats, largest single-step jumps, constant intervals, and sampling-interval anomalies on the selected signal/cursor window off the GUI thread, emitting clickable evidence rows that jump the plot directly to the event.
+   - **Revocable Named-Pipe Capture MCP & Project Reference Lookup**: shares only a frozen read-only `AnalysisSnapshot` over an authenticated local Windows pipe (`CaptureLease`, 32-byte `authkey`, revocable at any time via `撤销取数`), optionally bound to a version-scoped **ProjectAgent** (`assistant-project-agents.json`) that matches the logged software version signal and exposes C/A2L/DBC/requirement search via `osvanta_lookup_reference`. Only locally issued `ev-*` / `src-*` IDs can become navigable links back to waveforms or source excerpts.
+
+```mermaid
+flowchart LR
+    UI["MainWindow / Plot (Selected Signals + Time Range)"] -->|"Capture Snapshot"| SNAP["Frozen AnalysisSnapshot (Read-Only Copy)"]
+    PA["ProjectAgent (Version Signal + C/A2L/DBC/Req SHA-256)"] -->|"Version-Scoped Bind"| TOOLS
+    SNAP --> TOOLS["AnalysisTools (Local Deterministic Metrics + Bounds Check)"]
+    TOOLS --> LEASE["CaptureLease (AF_PIPE + 32B authkey, Revocable)"]
+    LEASE <-->|"stdio JSON-RPC"| MCP["OsvantaCaptureMCP.exe"]
+    MCP <-->|"Tool Calls + Evidence IDs"| AI["Assistant / Codex Desktop"]
+    AI -->|"Verified ev-* / src-* IDs"| UI
+```
+
+---
 
 ## Supported formats
 
 | Measurement | Content | Database |
 |---|---|---|
-| BLF (`.blf`) | Raw CAN frames | DBC or ARXML required |
+| BLF (`.blf`) | Raw CAN/LIN frames or CATK cloud playback BLF | DBC / ARXML / LDF (embedded in cloud BLF) |
 | ASC (`.asc`) | Raw CAN frames | DBC or ARXML required |
 | TRC (`.trc`) | Raw CAN frames (PEAK trace, versions 1.0 to 3.0) | DBC or ARXML required |
 | MDF4/MDF3 (`.mf4`, `.mdf`) | Raw CAN bus logging or pre-decoded signals | Required only for raw bus logging |
-| CSV (`.csv`) | Raw CAN export, narrow signals, or wide signals | Required only for raw CAN data |
+| CSV (`.csv`) | Raw CAN export, narrow/wide signals, or cloud CSV | Required for raw CAN / cloud import |
 
-MDF and CSV content is detected automatically. Database Manager supports per-channel DBC/ARXML assignments, mixed database formats, decode-coverage indicators, and a channel-0 fallback.
+MDF and CSV content is detected automatically. Database Manager supports per-channel DBC/ARXML/LDF assignments, mixed database formats, decode-coverage indicators, and a channel-0 fallback.
 
+---
 
-## Current capabilities
+## Core capabilities
 
 - Fast bulk loading and decoding for BLF, ASC, TRC, MDF/MF4, and CSV measurements.
-- Searchable channel/message/signal tree with multi-select plotting and drag-and-drop.
-- Indexed **Trace** of the raw CAN and LIN frames, with filtering and on-demand signal decode. Its **Δt** column shows the time since the previous frame with the same ID on the same channel, the bytes that changed since that frame are highlighted, and it can follow plot Cursor 1 both ways.
-- Formula-based **Calculated Signal** with arithmetic, comparisons, logical expressions, temporal operations, and a stateful diagnostic counter; **Insert function** (`Shift+F3`) lists every function by category, with how to use each. The definitions are saved in configurations.
-- **Statistics** in the signal table: Min, Max, Mean, Std dev, RMS and Samples, over the visible range or between the cursors, and the **Δ C2−C1** difference between the cursors. Right-click the table header to choose the columns.
-- **Table**: the plotted signals as a table, right of the plot, a row per sample time.
-- Named **markers** on the plot: add one where you right-click or at Cursor 1 (`M`), drag, rename, go to; they are saved in configurations and written into MF4 exports as events.
-- **File ▸ Measurement info** (`Ctrl+I`): the file's format, size, start time and duration, and for MF4 its header, events and attachments. MF4 events can be drawn on the plot.
-- Export of the plotted signals to CSV or Excel (`.xlsx`), on a selected signal's timestamps or a recurrence time you enter, or to MF4; **File ▸ Save decoded measurement as MF4** writes every decoded signal.
-- **Tools ▸ Convert files**: join, cut and resample measurements, keep chosen signals, and convert between BLF, ASC, MF4 and CSV (TRC as an input). Signal selections can be saved by name and reused on other files, or shared as text files.
-- JSON configuration save/load for measurement paths, database mapping, calculated signals, plotted order, groups, colors, visibility, axes, cursors, markers, and display settings.
-- YAML rule-based diagnostics for expressions, ranges, fault flags, and message loss; optional GitHub Models analysis is available through `Ctrl+Shift+A`.
+- Searchable channel/message/signal tree with multi-select plotting, drag-and-drop across windows, and exact-name signal inheritance when switching logs.
+- Indexed **Trace** of raw CAN and LIN frames with filtering, on-demand decode, **Δt** per ID/channel, changed-byte highlighting, and bidirectional Cursor 1 sync.
+- Formula-based **Calculated Signal** with arithmetic, comparisons, logical expressions, temporal operations, and stateful diagnostic counters (**Insert function** `Shift+F3`).
+- **Statistics** in the signal table (`Min`, `Max`, `Mean`, `Std dev`, `RMS`, `Samples`, `Δ C2−C1`) over the visible range or between cursors.
+- **Table** view beside the plot, named **Markers** (`M`) exported as MF4 events, **Measurement info** (`Ctrl+I`), and export to CSV, Excel (`.xlsx`), or MF4 (**Save decoded measurement as MF4**).
+- **Tools ▸ Convert files**: join, cut, resample, filter signals, and convert between BLF, ASC, MF4, and CSV (TRC input).
+- **Plot modes**: **Stacked** (default), **Multi-Axis** (unit-grouped or per-signal axes), **MultiStack** (overlay lanes), and **Multi-Window** (`多窗口` with independent per-window legends and `共轴`/`独立轴` modes).
+- **Line & point modes**: **Step Mode** (default) or **Interpolation Mode** (`S`), adaptive **Show Data Points**, **Hide Line**, and explicit line widths (`1–8 px` or `Auto`).
 
-### Offline telemetry observation
-
-After decoding, click or drag Cursor 1 to inspect a recording. Its value columns,
-the Table and an open Trace follow that position. Drag the bottom ruler to pan
-the shared timeline or use the wheel to zoom down to 10 ms and finer intervals.
-The top area contains one status row with the project and recording time.
-Playback transport controls, the fixed 10 ms shortcut and the header's gap controls
-are removed. Only the top window shows the **信号 / C1 / C2** column header;
-all lower lists start directly with their signals to leave more room for rows.
-There is no separate window title or permanent up/down/close button row.
-Right-click a signal, the list header, empty list space or its plot to see the
-window name, select it as the target for added signals, rename, reorder or close
-it. The same menu offers **此窗口 Y 轴 → 共轴 / 独立轴**.
-
-**Stale after** in Project settings marks each plotted signal separately when it has
-had no update for longer than the configured timeout. Longer gaps have amber shading and broken
-curves; cursor values say **Stale** rather than presenting a held value as a new
-measurement. Before a signal's first sample they say **No data**. Zero disables
-gap marking. Raw measurements and exported samples are unchanged. The supplied
-E702 project selects a 2-second timeout; recordings without a configured default
-start with gap marking off. Configure the DBC that matches the recorded layout.
-
-The recording-status row displays absolute time when the source has an epoch time base.
-**BLF UTC → local** is the standard interpretation. Some cloud CSV-to-BLF
-converters write local clock fields into the BLF header: select **Cloud local
-wall time** for these files to retain the original clock time, avoiding a second
-timezone conversion. This is an explicit display setting, not a change to every
-BLF or to relative timestamps. Time mode, timeout and cursor position are saved
-with the configuration. Old playback settings remain readable; they do not start
-a timer or restore transport controls in the observation interface.
-
-Open a saved playback session directly with `BusLogAnalyzer.exe --config session.json`.
-This feature replays measurements on screen; it does not transmit on a CAN bus.
-
-### Projects and additional CSV signals
-
-In **Log Explorer**, right-click a file or folder to open its location, copy
-its path, copy/paste files or folders, or compress/extract ZIP archives. ZIP
-files are visible alongside measurement files. Ctrl+C / Ctrl+V and multiple
-selection are supported; Explorer's file clipboard works in both directions.
-File operations run in the background and can be cancelled. Existing items
-are kept: duplicate names get a numeric suffix. Extraction creates a separate
-folder and rejects paths outside it. RAR and 7z extraction are not supported.
-
-**File → Project settings** names a project, sets its clock and freshness defaults,
-and adds CSV signal sources. Each CSV source selects its timestamp column and
-physical signal columns, its encoding and delimiter, and a time alignment rule.
-CSV signals appear under **CSV signals**, retain their own samples, and share the
-plot/playback axis with the main recording. Blank cells are missing samples;
-zero remains zero. They do not create CAN/LIN frames or alter the raw Trace.
-The importer sorts reverse-ordered exports and refuses missing columns, invalid
-timestamps, and source clocks that do not overlap the recording.
-
-For cloud converters that write local fields directly into the BLF header,
-choose **Cloud BLF header contains local clock fields** for the CSV. For a standard
-UTC BLF, choose **Absolute date/time with UTC offset** and enter the CSV's offset.
-Already aligned numeric CSV times use **Relative seconds from recording zero**.
-An additional time adjustment is explicit; no resampling or value interpolation
-is introduced. Changing only the playback display timezone does not move samples.
-
-**File → Save project** writes a reusable project profile: DBC/channel mappings,
-CSV sources and selected columns, time/freshness rules, and default plot keys.
-It excludes the specific recording and playback progress. **Open project** starts
-a fresh session; choose that project's main measurement afterward. **Save/Open
-configuration** continues to save/reopen a particular recording and its view.
-Database and fixed CSV paths are stored relative to the project file where
-possible. A source path such as `{measurement_stem}.csv` selects a same-named
-CSV beside each main recording, so a project can be reused on later logs.
-
-Project-specific DBCs, recorded data and personal project profiles stay outside
-the source repository. No E702 or ACT7 column names are built into the importer.
-
-### Plot controls
-
-- **Stacked** is the default mode and gives each signal its own lane and Y scale.
-- **Multi-Axis** overlays the signals, with one axis per unit and an optional individual axis per signal.
-- **MultiStack** has lanes that each hold several signals; drag signals into a lane to overlay them there.
-- Dual draggable cursors provide values and delta time; a click on the plot places Cursor 1 there and a Shift+click places Cursor 2. A cursor switched on always appears inside the visible window, and cursors are black on a light plot background and white on a dark one.
-- Fit-to-window and vertical-fit work across all plot modes while preserving the relevant view range.
-- After the plot mode buttons, Fit to Window, Fit Vertical, the cursors, the line mode, Show Data Points and Hide Line are black-and-white icons; pointing at one shows its name.
-- Signals can be grouped, reordered by dragging, recolored, hidden, or removed.
-- The line-mode button (`S`) switches between **Step Mode**, the default, where each value is held until the next sample, and **Interpolation Mode**, where straight lines join the samples. Its icon shows the mode the plot is in.
-- **Show Data Points** uses adaptive markers and thinner lines.
-- **Hide Line** is enabled only when data points are shown; when ON, it displays points without signal lines.
+---
 
 ## Install and run
 
-### Portable release
+### Portable release (Windows)
 
-Download the latest Windows ZIP from [Releases](https://github.com/osvanta/bus-log-analyzer/releases), extract it, and run `BusLogAnalyzer.exe`. No installer or Python installation is required.
+Download the latest Windows ZIP from [Releases](https://github.com/jintaotian460-Tony/CATK/releases), extract it, and run `BusLogAnalyzer.exe` (or `BusLogAnalyzer.exe --config session.json`). No Python installation is required.
+
+> **Bring your own databases:** DBC/ARXML/LDF databases, recorded vehicle data, and personal project profiles are never included in this repository or in release packages.
 
 ### From source
 
 ```powershell
-git clone https://github.com/osvanta/bus-log-analyzer.git
-cd bus-log-analyzer
+git clone https://github.com/jintaotian460-Tony/CATK.git
+cd CATK
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python app.py
 ```
 
-The portable build and CI release build use Python 3.12.
+The portable build and CI release build target Python 3.12 on Windows.
+
+---
 
 ## Basic workflow
 
-1. Select **Open Measurement** and choose a supported measurement.
-2. If the file contains raw CAN frames, select **Databases** and configure DBC/ARXML mapping.
+1. Select **Open Measurement** (`Ctrl+O`) and choose a supported measurement, or double-click a file in **Log Explorer**.
+2. If the file contains raw CAN/LIN frames, select **Databases** and configure DBC/ARXML/LDF mapping (or configure a reusable project under **File ▸ Project settings**).
 3. Select **Decode** (`F9`).
-4. Search the signal tree, then double-click, drag, press `Space`, or use the context menu to plot signals.
-5. Use cursors, plot modes, data points, grouping, and fit controls as needed.
-6. In the **File** menu, select **Save configuration** to preserve the session, or **Export plotted signals** to write them to CSV, Excel or MF4.
-7. Open the **Trace** when the source contains raw CAN frames.
-8. The **Help** menu has Getting started (`F1`), the keyboard shortcuts, GitHub Discussions for questions and ideas, GitHub issues for problems and feature requests, and About.
+4. Double-click, drag, press `Space`, or use the context menu to plot signals into the active window.
+5. Drag the bottom time ruler to pan, scroll to zoom down to 10 ms or finer, and click / Shift+click for Cursor 1 / Cursor 2 readouts.
+6. Open **Assistant** to run local deterministic signal checks or bind a `ProjectAgent` catalog (`assistant-project-agents.json`) for version-scoped C/A2L/DBC/requirement lookup with Codex Desktop.
+7. Use **File ▸ Save configuration** (`Ctrl+S`), **File ▸ Save project**, **分析模板**, or **File ▸ Export plotted signals** (`Ctrl+E`).
+
+---
 
 ## Keyboard shortcuts
 
@@ -194,9 +126,10 @@ The portable build and CI release build use Python 3.12.
 | `R` | Toggle both cursors |
 | `M` | Add a marker at Cursor 1 |
 | `Delete` | Remove selected plotted signals |
-| `Ctrl+Z` | Undo the last plot action |
+| `Ctrl+Z` | Undo the last plot or window action |
 | `Ctrl+Shift+-` / `Ctrl+Shift++` | Collapse / expand signal-tree messages |
 
+---
 
 ## Test and build
 
@@ -211,156 +144,32 @@ Build the portable application with:
 .\build_portable.bat
 ```
 
-Output is written to `dist\BusLogAnalyzer\`. Pushing a `v*.*.*` tag runs the Windows build workflow and publishes a release ZIP.
+Output is written to `dist\BusLogAnalyzer\`. Runtime dependencies are maintained in [requirements.txt](requirements.txt) and hash-pinned in [requirements-release.txt](requirements-release.txt).
+
+---
 
 ## Repository layout
 
 ```text
-app.py                 Application entry point and version
-core/readers/          BLF, ASC, TRC, MDF/MF4, and CSV readers
-core/                  Decode, signal storage, export, and generated-signal logic
-core/diagnostics/      Rule engine and optional AI-assisted diagnostics
-gui/                   Main window, plots, database manager, CAN Trace, diagnostics
-config/diagnostics/    User-editable diagnostic rules and documentation
-resources/             Application icon and splash assets
-guide/, mkdocs.yml     User guide, published to GitHub Pages
-tests/                 Pytest regression suite
+app.py                         Application entry point and version
+core/readers/                  BLF, ASC, TRC, MDF/MF4, and CSV readers
+core/                          Decode, signal store, cloud BLF, project config, templates,
+                               analysis snapshot/tools, ProjectAgent, CaptureLease, RPC transport
+gui/                           Main window, multi-window plots, Log Explorer, Assistant dock,
+                               Database Manager, CAN Trace, Project settings
+tools/osvanta_capture_mcp.py   Stdio MCP bridge to revocable CaptureLease pipes
+docs/                          Offline observation reference and architecture notes
+guide/, mkdocs.yml             User guide source
+resources/                     Application icon and splash assets
+tests/                         Pytest regression suite
 ```
 
-Runtime dependencies are maintained in [requirements.txt](requirements.txt).
+---
 
-## Project log browsing and cloud playback
+## Security, license, and attribution
 
-The **Log Explorer** opens a folder tree whose root is saved with the project.
-Double-clicking a supported log replaces and decodes the active measurement.
-The explorer can be hidden; **Signals** opens the separate movable floating
-signal tree. Use the toolbar actions to show either panel again.
-The floating signal tree uses standard title-bar minimize, maximize/restore
-and close buttons. Close hides only the signal window and stays hidden while
-switching logs. **Signals** restores a hidden or minimized signal window;
-saved configurations retain the visibility choice.
-
-Under **File → Project settings → CAN/LIN import matrices**, configure a fixed
-set of DBC/LDF versions, platform network numbers and exported BLF channels.
-Unassigned candidates are considered only when the frame ID and signal names
-identify one matrix uniquely. Saved matrix fingerprints reject later file
-changes until the version is reviewed in Project settings. An optional signal
-DBC expands packed telemetry fields instead of displaying their 64-bit chunks.
-
-Opening a matching cloud CSV converts it to a cached single-file playback BLF.
-**File → Save playback BLF…** saves a portable copy. The BLF includes normal
-CAN/CAN FD/LIN frame objects, decoder definitions and Osvanta observation
-markers; reopening it needs no neighbouring CSV or external database.
-Only complete, representable observations produce reconstructed bus frames.
-Partial observations retain actual values and explicit missing markers rather
-than invented payload values. Unsupported fields are listed in Diagnostics.
-Plots show **未采集** at a missing observation and retain the configured stale
-timeout and clock interpretation.
-
-These are reconstructed cloud observations, not original bus captures: wire
-ordering at equal timestamps, unobserved reserved bits, timing inside a frame
-and bus-error events cannot be recovered. Third-party BLF readers can read the
-standard frame objects; they may ignore Osvanta's sparse-observation markers.
-
-### Keep signal choices when changing recordings
-
-Double-clicking another log in the explorer carries selected signals and plot
-presentation (order, colour, groups, line style and axes) to the new recording.
-Only the complete signal name must match, including case and whitespace;
-units, buses, channels and message groups do not block inheritance. Values
-and units always come from the new recording. For multiple same-name channels,
-the existing full key is preferred when present; otherwise the first channel
-in recording order is used. Old selections that resolve to one channel appear
-once. Right-click an unmatched entry and choose **匹配到本日志信号…** to select
-a different signal manually.
-
-Unavailable signals remain grey, labelled **本日志未匹配**, with empty samples.
-They recover when a later recording contains them. Calculated curves are
-recomputed from the new inputs. Changing between MF4/MDF and telemetry/bus
-recordings clears this handoff; opening another project also clears it.
-
-### Inspect original samples and the time ruler
-
-The **采样点** button shows original sample positions. Dense views retain a
-capped subset and explicitly display **稀疏显示，放大查看全部**; after zooming,
-**全量（当前视图）** means every sample in view is drawn. Hover a point for its
-timestamp, value and interval from the preceding original sample.
-
-The bottom time ruler has a baseline, long labelled ticks and short minor
-ticks, also when grid lines are enabled. **10 ms** focuses the cursor or view
-centre with 10 ms minor ticks; **Fit** restores the full recording. These
-controls change the view, not the recorded sampling interval. All four plot
-layouts use the same ruler.
-
-### Multi-window analysis and engineering templates
-
-**多窗口** arranges graph windows vertically, each with its own signal list.
-The obsolete global signal list stays hidden and takes no plot width, including
-after startup, configuration restore and log changes.
-Click its title to select the destination, then double-click a signal or drag
-it into that window. Moving an already plotted signal transfers it to the
-destination window. **＋窗口** adds a window; arrows change its order, its close
-button removes it and its curves. Drag the thin line between two windows to
-adjust their relative heights. Windows fill the available area proportionally,
-with no outer padding or gaps; extra windows scroll at a readable minimum height.
-The last graph meets the persistent bottom time ruler on the right. Its signal
-list spans the ruler height and reaches the cursor/file information bar directly;
-there is no unused strip below the list, including after resizing or scrolling. The log explorer and
-bottom information panel also use thin divider lines: drag to resize,
-double-click to collapse or reopen. Collapsed panels keep their line at the edge.
-Each window chooses either **全部共轴** or **每条信号独立轴** for all its signals.
-Horizontal navigation and both cursors are synchronized in both directions.
-A shared time ruler stays below the scrollable windows, including at 10 ms zoom.
-Hold the left mouse button on the bottom ruler and drag horizontally to pan
-time in every window. This also works in the other plot layouts. Panning keeps
-the zoom span, Y ranges and cursor times, and turns off **Follow view** so
-playback cannot pull the viewport back.
-
-The **线宽** menu selects 0.5, 1, 1.5, 2, 3 or 4 px for all signal curves.
-An explicit width also applies to selected signals and point mode; **自动**
-uses the original automatic widths. The choice survives log switches and is
-saved in configurations and analysis templates. On narrow windows it is
-available as a submenu under **»**.
-
-Drag a signal name from a window's local list to another window's list or
-plot to move it. Ctrl/Shift selects several signals for one move. Colors,
-line styles, visibility and original data stay with the signals; **Ctrl+Z**
-undoes the move. Dropping inside the same window keeps the existing curve.
-
-**分析模板 → 保存当前分析为模板…** saves a named view in the active engineering
-project. The first save asks for a project file if none is linked. The menu
-applies, renames and deletes that project's templates. Templates contain signal
-identities, styles, groups, window ownership/order/heights, axis mode and Y
-limits, and the definitions required by plotted calculated signals. They do
-not contain measurement files, samples, saved time ranges or cursor positions.
-Applying one replaces the current curves and layout while retaining the open
-recording, current time range, both cursor positions and measurement events.
-Missing signals stay grey and may be confirmed manually; calculations use the
-current recording. Existing same-family inheritance and cross-family clearing
-also apply to the window layout. Project libraries remain separate.
-
-## Security and license
-
-Release binaries are currently unsigned, so Windows SmartScreen may show a warning on first launch.
-
-Osvanta Bus Log Analyzer is licensed under the [Mozilla Public License 2.0](LICENSE).
-
-MPL-2.0 is a file-level copyleft license. You may use it freely, including
-inside commercial and proprietary products, and you may combine these files with
-files of your own under any terms you choose. The one obligation is reciprocal:
-if you distribute a modified version of a file that carries the MPL notice, the
-source of that modified file must be made available under the MPL.
-
-Releases up to and including `v00.00.59` were published under the MIT License and
-remain available under those terms — see [LICENSE-MIT](LICENSE-MIT). The change to
-MPL-2.0 applies from `v00.00.60` onward.
-
-Osvanta Bus Log Analyzer bundles third-party components under their own licenses, including
-LGPL-3.0 components (Qt via PySide6, python-can, asammdf, chardet). They are used
-unmodified and remain available from their upstream projects. See
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full component list, and
-`licenses/` for the complete license texts — both ship inside the portable build.
-
-"Osvanta", "Osvanta Bus Log Analyzer", and the earlier names "CAN Scope" and
-"CANScope" are names used by this project. The license grants rights to the
-code, not to the project name.
+- Release binaries are currently unsigned, so Windows SmartScreen may show a warning on first launch.
+- CATK stores per-user packaged settings and caches under `%LOCALAPPDATA%\CATK\` (with automatic non-destructive seeding from earlier `%LOCALAPPDATA%\Osvanta\BusLogAnalyzer\` installations on first run).
+- Licensed under the [Mozilla Public License 2.0](LICENSE). Based on **Osvanta Bus Log Analyzer** by Dinakaran Ganesan (`MPL-2.0`; releases up to `v00.00.59` under [LICENSE-MIT](LICENSE-MIT)).
+- Bundles third-party components under their own licenses, including LGPL-3.0 components (Qt via PySide6, python-can, asammdf, chardet). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/`.
+- `"Osvanta"` and `"Osvanta Bus Log Analyzer"` are trademarks/names of the upstream project; CATK maintains its own name and branding.

@@ -198,3 +198,27 @@ def test_text_only_signal_is_not_marked_uncollected(panel):
     panel.playback_at(0.5)
     assert panel.table.item(panel._row_lookup['text'],2).text() == 'Off'
     assert 'NO FRESH DATA' not in panel.freshness_summary(0.5)[0]
+
+
+def test_cloud_cache_directory_prefers_catk_data_dir_and_custom_packed_keyword(tmp_path, monkeypatch):
+    from core import cloud_blf
+
+    monkeypatch.setenv('OSVANTA_DATA_DIR', str(tmp_path / 'legacy'))
+    monkeypatch.delenv('CATK_DATA_DIR', raising=False)
+    assert cloud_blf.cache_directory() == tmp_path / 'legacy' / 'cloud_cache'
+
+    monkeypatch.setenv('CATK_DATA_DIR', str(tmp_path / 'catk'))
+    assert cloud_blf.cache_directory() == tmp_path / 'catk' / 'cloud_cache'
+
+    raw = database(tmp_path, 'packed', [Signal('CustomBlob1', 0, 64), Signal('CustomBlob2', 64, 64)])
+    decoded = database(tmp_path, 'decoded', [Signal('InFirst', 0, 8), Signal('AcrossChunks', 60, 8)])
+    config = settings(raw, '10', 'CAN', 1)
+    config['telemetry_database'] = str(decoded)
+    config['packed_keyword'] = 'CustomBlob'
+    path = source(tmp_path, ['CustomBlob1(null-007-10)/1000ms', 'CustomBlob2(null-007-10)/1000ms'], [[19, '']])
+    store = load(convert_csv(path, config))
+    try:
+        assert store.get_series('CH1::decoded::InFirst').values[0] == 19
+        assert np.isnan(store.get_series('CH1::decoded::AcrossChunks').values[0])
+    finally:
+        store.close()

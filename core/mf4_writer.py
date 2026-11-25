@@ -32,7 +32,7 @@ from core.bus_types import BusType, coerce_channel_key
 from core.signal_store import SignalSeries
 
 #: The acquisition source name that marks a channel group as written here.
-SOURCE_NAME = 'Osvanta Bus Log Analyzer'
+SOURCE_NAME = 'CATK'
 
 #: An epoch time later than this is taken for a wall-clock recording start.
 _EPOCH_MIN = 1e8

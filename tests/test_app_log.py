@@ -33,7 +33,7 @@ def _session(text: str) -> str:
 
 
 def _start(path: Path) -> AppLog:
-    return AppLog('Osvanta Bus Log Analyzer', 'v00.00.99', path)
+    return AppLog('CATK', 'v00.00.99', path)
 
 
 _APP_SCRIPT = r"""
@@ -74,9 +74,9 @@ def test_without_a_console_the_application_writes_its_output_here(tmp_path):
     assert completed.returncode == 0, crash_log.read_text(encoding='utf-8')[-4000:]
     assert completed.stdout == ''
     session = _session(log.read_text(encoding='utf-8'))
-    assert re.match(r'\S+ \S+  Osvanta Bus Log Analyzer v\S+  pid \d+ ====\n', session)
+    assert re.match(r'\S+ \S+  CATK v\S+  pid \d+ ====\n', session)
     # The Log panel's lines.
-    assert re.search(rf'^{STAMP}Osvanta Bus Log Analyzer v\S+ started\.$', session, re.M)
+    assert re.search(rf'^{STAMP}CATK v\S+ started\.$', session, re.M)
     assert f'App log file: {log}' in session
     # What a console would have shown.
     assert re.search(rf'^{STAMP}printed by the application$', session, re.M)
@@ -158,7 +158,7 @@ def test_an_oversized_log_is_rotated(tmp_path):
     _start(path).close()
 
     assert (tmp_path / 'app.log.1').stat().st_size == MAX_BYTES + 1
-    assert path.read_text(encoding='utf-8').startswith('Osvanta Bus Log Analyzer app log.')
+    assert path.read_text(encoding='utf-8').startswith('CATK app log.')
 
 
 def test_a_log_another_instance_holds_open_is_still_appended_to(tmp_path):
@@ -172,7 +172,7 @@ def test_a_log_another_instance_holds_open_is_still_appended_to(tmp_path):
         log.close()
 
     assert log.path == path
-    assert 'Osvanta Bus Log Analyzer v00.00.99' in _session(path.read_text(encoding='utf-8'))
+    assert 'CATK v00.00.99' in _session(path.read_text(encoding='utf-8'))
 
 
 def test_a_flood_of_messages_stops_at_the_session_limit(tmp_path, monkeypatch):

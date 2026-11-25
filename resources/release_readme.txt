@@ -1,9 +1,10 @@
-Osvanta Bus Log Analyzer
+CATK (CAN/LIN Automotive Telemetry Toolkit)
 
-Thank you for using Osvanta Bus Log Analyzer.
+Based on Osvanta Bus Log Analyzer (MPL-2.0).
 
 BusLogAnalyzer.exe   Start here: the application itself.
 appdebugger.exe      The same application with memory checks, to reproduce a crash for a bug report (runs slower).
+OsvantaCaptureMCP.exe  Stdio MCP adapter used for revocable, read-only local snapshot sharing.
 
 LICENSE, THIRD_PARTY_NOTICES.md and the licenses folder hold the licence of this application and of
 every component it includes. Qt, python-can and asammdf are used under the GNU LGPL; THIRD_PARTY_NOTICES.md

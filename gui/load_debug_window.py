@@ -64,7 +64,7 @@ class LoadDebugWindow(QMainWindow):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
-        self.setWindowTitle("Osvanta Bus Log Analyzer - CAN Load Debug")
+        self.setWindowTitle("CATK - CAN Load Debug")
         self.resize(1500, 900)
 
         central = QWidget(self)

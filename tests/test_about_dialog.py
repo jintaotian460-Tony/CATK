@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture()
 def dialog(qapp):
-    dlg = AboutDialog("Osvanta Bus Log Analyzer", "v00.01.00")
+    dlg = AboutDialog("CATK", "v00.01.00")
     yield dlg
     dlg.close()
     qapp.processEvents()
@@ -46,7 +46,7 @@ def test_about_text_carries_the_lgpl_notice_and_pointer(dialog):
     """LGPL-3.0 4(c) — name the LGPL components and point at the licence copies."""
     from gui.about_dialog import _ABOUT_HTML
 
-    text = _ABOUT_HTML.format(name="Osvanta Bus Log Analyzer", version="v00.01.00")
+    text = _ABOUT_HTML.format(name="CATK", version="v00.01.00")
     assert "Lesser General Public License" in text
     assert "GNU GPL" in text
     for component in ("Qt", "PySide6", "python-can", "asammdf"):
@@ -83,21 +83,19 @@ def test_every_bundled_licence_file_is_readable(dialog):
         assert len(dialog._viewer.toPlainText()) > 100, f"{title} looks empty"
 
 
-def test_the_survey_link_asks_for_the_survey(dialog):
-    """The link stays in the dialog however the survey request was answered;
-    the main window opens the survey."""
-    requested = []
-    dialog.surveyRequested.connect(lambda: requested.append(True))
+def test_the_about_dialog_has_no_survey_and_credits_upstream(dialog):
+    """Upstream survey link is removed in CATK, while upstream attribution stays."""
+    from gui.about_dialog import _ABOUT_HTML
 
-    assert "user survey" in dialog.survey_link.text()
-    dialog.survey_link.linkActivated.emit("#")
-
-    assert requested == [True]
+    assert not hasattr(dialog, "survey_link")
+    assert not hasattr(dialog, "surveyRequested")
+    text = _ABOUT_HTML.format(name="CATK", version="v00.01.00")
+    assert "Osvanta Bus Log Analyzer" in text
 
 
 @pytest.mark.parametrize("link, text, url", [
-    ("ask_link", "Ask a question", "https://github.com/osvanta/bus-log-analyzer/discussions"),
-    ("report_link", "Report a problem", "https://github.com/osvanta/bus-log-analyzer/issues"),
+    ("ask_link", "Ask a question", "https://github.com/jintaotian460-Tony/CATK/discussions"),
+    ("report_link", "Report a problem", "https://github.com/jintaotian460-Tony/CATK/issues"),
 ])
 def test_the_project_links_open_their_pages(dialog, monkeypatch, link, text, url):
     """The same ways to reach the project as the Help menu."""
@@ -108,8 +106,6 @@ def test_the_project_links_open_their_pages(dialog, monkeypatch, link, text, url
 
     opened = Mock(return_value=True)
     monkeypatch.setattr(QDesktopServices, "openUrl", opened)
-    requested = []
-    dialog.surveyRequested.connect(lambda: requested.append(True))
 
     label = getattr(dialog, link)
     assert text in label.text()
@@ -117,7 +113,6 @@ def test_the_project_links_open_their_pages(dialog, monkeypatch, link, text, url
     label.linkActivated.emit("#")
 
     opened.assert_called_once_with(QUrl(url))
-    assert requested == []
 
 
 def test_the_links_sit_left_of_close_in_the_help_menus_order(dialog):
@@ -125,16 +120,16 @@ def test_the_links_sit_left_of_close_in_the_help_menus_order(dialog):
 
     dialog.show()
     close = next(b for b in dialog.findChildren(QPushButton) if b.text() == "Close")
-    links = [dialog.ask_link, dialog.report_link, dialog.survey_link]
+    links = [dialog.ask_link, dialog.report_link]
 
     assert [link.x() for link in links] == sorted(link.x() for link in links)
-    assert dialog.survey_link.geometry().right() < close.x()
+    assert dialog.report_link.geometry().right() < close.x()
 
 
 def test_dialog_survives_missing_licence_files(qapp, monkeypatch, tmp_path):
     """A source checkout without generated licences must still open."""
     monkeypatch.setattr("gui.about_dialog._resource_root", lambda: tmp_path)
-    dlg = AboutDialog("Osvanta Bus Log Analyzer", "v00.01.00")
+    dlg = AboutDialog("CATK", "v00.01.00")
     try:
         assert dlg._list.count() == 0
         assert not dlg._list.isEnabled()

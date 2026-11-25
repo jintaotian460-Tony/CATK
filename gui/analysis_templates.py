@@ -1,3 +1,9 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
+
 """Named analysis views managed inside the active engineering project."""
 from copy import deepcopy
 import json
@@ -103,8 +109,8 @@ def bind_profile(window, path):
         return
     try:
         data = json.loads(Path(path).read_text(encoding='utf-8-sig'))
-        if data.get('kind') != 'osvanta.project' or data.get('schema_version') != 1:
-            raise ValueError('Not an Osvanta project')
+        if data.get('kind') not in ('osvanta.project', 'catk.project') or data.get('schema_version') != 1:
+            raise ValueError('Not a CATK/Osvanta project profile')
         library = normalise_library(data['project'].get('analysis_templates', {}))
         window.project['analysis_templates'] = library
         window._analysis_templates_baseline = deepcopy(library)
@@ -151,7 +157,7 @@ class TemplateMenu(QToolButton):
         if not profile:
             profile, _ = QFileDialog.getSaveFileName(window, '保存工程与分析模板',
                                                     (window.project.get('name') or 'project') + '.osvanta_project.json',
-                                                    'Osvanta project (*.json)')
+                                                    'CATK project (*.json)')
             if not profile:
                 return False
             from core.project_config import save_project

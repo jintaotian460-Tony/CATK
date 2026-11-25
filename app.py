@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from pathlib import Path
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-APP_NAME    = "Osvanta Bus Log Analyzer"
+APP_NAME    = "CATK"
 APP_VERSION = "v00.02.02+tony.playback.36"
 
 

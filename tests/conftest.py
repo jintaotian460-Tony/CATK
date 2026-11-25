@@ -58,14 +58,6 @@ def _no_diag_telemetry(monkeypatch):
     monkeypatch.setenv("OSVANTA_DIAG_TELEMETRY", "0")
 
 
-# Keep the survey request out of test runs: every window a test shows would
-# count as a start, in the user settings beside the source tree, and the
-# tenth would open a dialog. tests/test_survey_prompt.py turns it back on.
-@pytest.fixture(autouse=True)
-def _no_survey_request(monkeypatch):
-    monkeypatch.setenv("OSVANTA_SURVEY_PROMPT", "0")
-
-
 # Keep the last session out of test runs: every window a test closes with a
 # plot would ask whether to save it, and keep it beside the source tree.
 # tests/test_session_restore.py turns it back on.

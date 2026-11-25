@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 from __future__ import annotations
 
@@ -73,7 +74,7 @@ from core.project_config import normalise_project
 from core.signal_inheritance import recording_family
 from gui import signal_inheritance
 from gui import analysis_templates
-from gui import app_data, app_log, session_restore, survey_prompt
+from gui import app_data, app_log, session_restore
 from gui.brand_logo import BrandLogo, leave_logo_unframed
 from gui.dbc_manager import DBCManagerDialog
 from gui.edge_tab import EdgeTab
@@ -306,13 +307,6 @@ class MainWindow(QMainWindow):
         self._close_retry.setInterval(100)
         self._close_retry.timeout.connect(self.close)
         self._measurement_support_preloaded = False
-        # Counts this start once the window is up, and asks for the user
-        # survey when it is due: see gui.survey_prompt.
-        self._survey_start_counted = False
-        self._survey_timer = QTimer(self)
-        self._survey_timer.setSingleShot(True)
-        self._survey_timer.setInterval(survey_prompt.REQUEST_DELAY_MS)
-        self._survey_timer.timeout.connect(self._count_start_and_ask_for_survey)
         # The last session, asked about on close, kept up to date while the
         # user works and offered at the next start: see gui.session_restore.
         self._session_restore = session_restore.enabled(sys.argv)
@@ -806,16 +800,10 @@ class MainWindow(QMainWindow):
         # Last, where a menu bar has its Help menu.
         self.help_menu = HelpMenu(self.app_name, self)
         self.help_menu.shortcutsRequested.connect(self.show_shortcuts)
-        self.help_menu.surveyRequested.connect(self._take_survey)
         self.help_menu.aboutRequested.connect(self.show_about)
         # Also the window's, so that F1 works with the menu closed.
         self.addAction(self.help_menu.guide_action)
         self._add_menu_button(toolbar, self.help_menu)
-        # Shown once the user has answered the survey request "Remind me later".
-        self.survey_link = survey_prompt.SurveyLink()
-        self.survey_link.hide()
-        self.survey_link.clicked.connect(self._take_survey)
-        self.title_row.add_end_widget(self.survey_link)
 
     @staticmethod
     def _add_menu_button(toolbar: QToolBar, menu: QMenu) -> None:
@@ -1269,7 +1257,7 @@ class MainWindow(QMainWindow):
         self._mixed_mdf_notices_shown.add(path)
         message = (
             'This MDF file contains both existing decoded signals and raw CAN frames.\n\n'
-            'Osvanta Bus Log Analyzer will always list the existing decoded signals first.\n\n'
+            'CATK will always list the existing decoded signals first.\n\n'
             'To additionally decode the embedded CAN frames, click Databases and assign '
             'a DBC, ARXML or LDF file. On the next Decode, the analyzer will list both the '
             'existing decoded signals and the database-decoded CAN signals, and the Trace '
@@ -2402,7 +2390,7 @@ class MainWindow(QMainWindow):
         from core.project_config import save_project
         name = self.project.get('name') or 'project'
         path, _ = QFileDialog.getSaveFileName(self, 'Save project profile',
-                                             f'{name}.osvanta_project.json', 'Osvanta project (*.json)')
+                                             f'{name}.osvanta_project.json', 'CATK project (*.json)')
         if not path:
             return
         project = normalise_project(self.project)
@@ -2426,7 +2414,7 @@ class MainWindow(QMainWindow):
         if self._calc_thread is not None:
             QMessageBox.information(self, 'Calculation in progress', 'Wait for the calculation to finish.')
             return
-        path, _ = QFileDialog.getOpenFileName(self, 'Open project profile', '', 'Osvanta project (*.json)')
+        path, _ = QFileDialog.getOpenFileName(self, 'Open project profile', '', 'CATK project (*.json)')
         if not path:
             return
         from core.project_config import load_project
@@ -3421,7 +3409,6 @@ class MainWindow(QMainWindow):
         """
         from gui.about_dialog import AboutDialog
         dialog = AboutDialog(self.app_name, self.version, self)
-        dialog.surveyRequested.connect(self._take_survey)
         dialog.exec()
 
     def _on_worker_progress(self, message: str) -> None:
@@ -3562,7 +3549,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 'Measurement partially loaded',
-                'Osvanta Bus Log Analyzer loaded all readable channels. The following items '
+                'CATK loaded all readable channels. The following items '
                 f'could not be loaded:\n\n{details}\n\n'
                 'The original measurement was not modified.',
             )
@@ -3607,10 +3594,6 @@ class MainWindow(QMainWindow):
             # Queued, so the window has painted before the import competes
             # with it for the interpreter.
             QTimer.singleShot(0, _preload_measurement_support)
-        if not self._survey_start_counted:
-            self._survey_start_counted = True
-            if survey_prompt.enabled(sys.argv):
-                self._survey_timer.start()
         if not self._session_offered:
             self._session_offered = True
             if self._session_restore:
@@ -3691,37 +3674,6 @@ class MainWindow(QMainWindow):
         self._session_settled = True
         self._session_timer.stop()
         return True
-
-    def _count_start_and_ask_for_survey(self) -> None:
-        try:
-            state = survey_prompt.count_start(self._user_settings_path)
-        except OSError as exc:
-            self._log(f'Survey count warning: {exc}')
-            return
-        self.survey_link.setVisible(state.link_shown)
-        # Never over work in progress: with a dialog open or a load running,
-        # the request waits for the next start.
-        busy = (QApplication.activeModalWidget() is not None
-                or bool(self._running_threads()))
-        if not state.due or busy or self._closing or not self.isVisible():
-            return
-        self._answer_survey(state, survey_prompt.SurveyRequestDialog(self).ask())
-
-    def _take_survey(self) -> None:
-        """Open the survey from the top row's link, the Help menu or About."""
-        self._answer_survey(survey_prompt.load_survey_state(self._user_settings_path),
-                            survey_prompt.Answer.TAKE)
-
-    def _answer_survey(self, state: survey_prompt.SurveyState,
-                       answer: survey_prompt.Answer) -> None:
-        if answer is survey_prompt.Answer.TAKE:
-            QDesktopServices.openUrl(QUrl(survey_prompt.SURVEY_URL))
-        state = survey_prompt.answered(state, answer)
-        self.survey_link.setVisible(state.link_shown)
-        try:
-            survey_prompt.save_survey_state(self._user_settings_path, state)
-        except OSError as exc:
-            self._log(f'Survey answer warning: {exc}')
 
     def closeEvent(self, event) -> None:
         # Asked first: Cancel must find the window as the user left it.

@@ -1,9 +1,15 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
+
 """Project-scoped cloud CSV -> CAN/LIN BLF, including sparse-signal evidence.
 
 Complete reconstructed frames use normal BLF objects. Physical observations,
 missing values and the exact decoder definitions also travel inside standard
 GLOBAL_MARKER objects. No neighbouring CSV is needed when reopening the file.
-These markers are an Osvanta extension, not a claim of original bus capture.
+These markers are a CATK/Osvanta extension, not a claim of original bus capture.
 """
 from __future__ import annotations
 
@@ -29,7 +35,9 @@ COLUMN = re.compile(r'^([^()]+)\((.*)\)/(\d+)ms$')
 
 
 def cache_directory():
-    base = os.environ.get('OSVANTA_DATA_DIR') or str(Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'Osvanta' / 'BusLogAnalyzer')
+    base = (os.environ.get('CATK_DATA_DIR')
+            or os.environ.get('OSVANTA_DATA_DIR')
+            or str(Path(os.environ.get('LOCALAPPDATA', tempfile.gettempdir())) / 'CATK'))
     folder = Path(base) / 'cloud_cache'
     folder.mkdir(parents=True, exist_ok=True)
     return folder
@@ -40,12 +48,13 @@ def sha256(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
-def columns(path):
+def columns(path, column_regex=None):
     from core.supplemental_csv import csv_header
+    pattern = re.compile(column_regex) if isinstance(column_regex, str) else (column_regex or COLUMN)
     encoding, headers = csv_header(path, 'auto', ',')
     groups = {}
     for index, header in enumerate(headers):
-        match = COLUMN.match(header.strip())
+        match = pattern.match(header.strip())
         if not match:
             continue
         parts = match[2].rsplit('-', 2)
@@ -165,8 +174,9 @@ def convert_csv(path, settings, destination=None, progress=lambda text: None):
     import cantools
     path = Path(path).resolve()
     settings = copy.deepcopy(settings)
-    encoding, headers, groups = columns(path)
+    encoding, headers, groups = columns(path, settings.get('column_regex'))
     time_column = settings.get('time_column', '采集时间')
+    packed_keyword = str(settings.get('packed_keyword', 'TestData'))
     if time_column not in headers:
         raise ValueError(f'Missing timestamp column: {time_column}')
     matrices = []
@@ -217,13 +227,13 @@ def convert_csv(path, settings, destination=None, progress=lambda text: None):
         if key in used_channels and used_channels[key] != spec['sha256']:
             raise ValueError(f'Different matrices assigned to {key}')
         used_channels[key] = spec['sha256']
-        packed = all('TestData' in name and next(s for s in message.signals if s.name == name).length == 64 for name in names)
+        packed = all(packed_keyword in name and next(s for s in message.signals if s.name == name).length == 64 for name in names)
         decoded_message = message
         output_db = cantools.database.Database(messages=list(db.messages), strict=False)
         if telemetry and bus == 'CAN':
             telemetry_ids = {m.frame_id for m in telemetry.messages}
             overrides = {m.frame_id for m in db.messages if m.frame_id in telemetry_ids and m.signals and
-                         all('TestData' in s.name and s.length == 64 for s in m.signals)}
+                         all(packed_keyword in s.name and s.length == 64 for s in m.signals)}
             output_db = cantools.database.Database(messages=[m for m in db.messages if m.frame_id not in overrides] +
                 [m for m in telemetry.messages if m.frame_id in overrides], strict=False)
         if packed and telemetry:

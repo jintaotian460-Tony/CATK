@@ -1,8 +1,10 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
 
-"""Codex Desktop stdio MCP for user-approved live Osvanta captures."""
+"""Codex Desktop stdio MCP for user-approved live CATK captures."""
 import json
 from pathlib import Path
 import sys

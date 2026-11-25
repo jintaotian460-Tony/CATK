@@ -82,7 +82,7 @@ def test_a_switch_of_theme_redraws_the_logo_in_the_other_colours(qapp):
 def test_the_logo_sits_at_the_right_end_of_the_status_bar(qapp):
     from gui.main_window import BRAND_LOGO_HEIGHT, MainWindow
 
-    window = MainWindow('Osvanta Bus Log Analyzer', 'v00.00.99')
+    window = MainWindow('CATK', 'v00.00.99')
     try:
         window.resize(1200, 700)
         window.show()
@@ -91,11 +91,11 @@ def test_the_logo_sits_at_the_right_end_of_the_status_bar(qapp):
         logo = window.brand_logo
 
         assert logo.parentWidget() is bar and logo.isVisible()
-        # Below 28 pixels OSVANTA, under the name, can no longer be read.
+        # Below 28 pixels the wordmark in the logo can no longer be read.
         assert logo.height() == BRAND_LOGO_HEIGHT >= 28
         assert logo.x() > window.status_next_step_label.geometry().right()
         assert bar.height() >= BRAND_LOGO_HEIGHT
-        assert logo.toolTip() == 'Osvanta Bus Log Analyzer v00.00.99'
+        assert logo.toolTip() == 'CATK v00.00.99'
     finally:
         window.close()
         qapp.processEvents()
@@ -126,7 +126,7 @@ def test_no_line_is_drawn_beside_the_logo(qapp, monkeypatch):
             if element == QStyle.PrimitiveElement.PE_FrameStatusBarItem:
                 framed.append(widget)
 
-    window = MainWindow('Osvanta Bus Log Analyzer', 'v00.00.99')
+    window = MainWindow('CATK', 'v00.00.99')
     try:
         window.resize(1200, 700)
         window.show()
@@ -165,7 +165,7 @@ def test_a_long_status_message_never_widens_the_window(qapp):
     # under the mouse in the middle of a drag.
     from gui.main_window import MainWindow
 
-    window = MainWindow('Osvanta Bus Log Analyzer', 'v00.00.99')
+    window = MainWindow('CATK', 'v00.00.99')
     try:
         window.resize(900, 700)
         window.show()
