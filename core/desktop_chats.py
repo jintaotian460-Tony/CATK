@@ -1,6 +1,8 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """Create and read native Codex chats. All model turns are run in Desktop."""
 from __future__ import annotations
@@ -18,7 +20,7 @@ import tempfile
 import time
 import tomllib
 
-from core.codex_bridge import BridgeError, Cancelled, JsonRpc, StdioTransport
+from core.rpc_transport import BridgeError, Cancelled, JsonRpc, StdioTransport
 
 MCP_NAME = 'osvanta_capture'
 # Baseline desktop build, verified end-to-end. Newer builds are accepted after
@@ -27,7 +29,7 @@ MCP_NAME = 'osvanta_capture'
 VERIFIED_DESKTOP_VERSION = 'codex-cli 0.167.0-alpha.4.1'
 # One shared-analysis turn; the lease stays open only this long.
 MAX_TURN_SECONDS = 20 * 60
-TITLE = 'Osvanta 日志分析'
+TITLE = 'CATK 日志分析'
 MAX_QUESTION = 8_000
 EVIDENCE_ID = re.compile(r'\b(?:ev|src)-[1-9][0-9]*\b')
 
@@ -55,20 +57,23 @@ class DesktopProject:
 
 
 class DesktopChats:
-    def __init__(self, directory: Path, *, home=None, executable=None):
+    def __init__(self, directory: Path, *, home=None, executable=None,
+                 legacy_directory: Path | None = None):
         self.directory = directory.resolve()
+        self._legacy_directory = (legacy_directory.resolve()
+                                  if legacy_directory is not None else None)
         self._version_cache = self.directory.parent / 'verified-desktop-versions.json'
         self.home = (Path(home or os.environ.get('OSVANTA_DESKTOP_CODEX_HOME')
                           or Path.home() / '.codex').resolve())
         self.executable = executable or os.environ.get('OSVANTA_DESKTOP_CODEX_EXE')
         self._packaged = getattr(sys, 'frozen', False)
         self.mcp_command = Path(sys.executable).resolve()
+        self._adapter_path = Path(__file__).resolve().parents[1] / 'tools' / 'osvanta_capture_mcp.py'
         if self._packaged:
             self.mcp_command = self.mcp_command.with_name('OsvantaCaptureMCP.exe')
             self.mcp_args = [str(self.directory)]
         else:
-            adapter = Path(__file__).resolve().parents[1] / 'tools' / 'osvanta_capture_mcp.py'
-            self.mcp_args = ['-B', str(adapter), str(self.directory)]
+            self.mcp_args = ['-B', str(self._adapter_path), str(self.directory)]
 
     def setup_command(self):
         return ' '.join(['codex', 'mcp', 'add', MCP_NAME, '--',
@@ -95,7 +100,14 @@ class DesktopChats:
             raise BridgeError('Codex 桌面端的 MCP 设置格式无效。')
         return servers
 
-    def _is_registered(self, servers):
+    def _expected_args(self, directory: Path) -> list[str]:
+        if directory == self.directory:
+            return self.mcp_args
+        if self._packaged:
+            return [str(directory)]
+        return ['-B', str(self._adapter_path), str(directory)]
+
+    def _is_registered_for(self, servers, directory: Path) -> bool:
         server = servers.get(MCP_NAME)
         if not isinstance(server, dict) or server.get('enabled') is False:
             return False
@@ -106,19 +118,40 @@ class DesktopChats:
         registered = Path(command).resolve()
         if not registered.is_file():
             return False
-        if registered == self.mcp_command and args == self.mcp_args:
+        if registered == self.mcp_command and args == self._expected_args(directory):
             return True
 
         # An existing Desktop configuration can keep using the trusted
         # source adapter with the same capture directory after deployment.
         if (not self._packaged or registered.name.lower() not in ('python.exe', 'pythonw.exe')
                 or not isinstance(args, list) or len(args) != 3
-                or args[0] != '-B' or args[2] != str(self.directory)
+                or args[0] != '-B' or args[2] != str(directory)
                 or not isinstance(args[1], str)):
             return False
         adapter = Path(args[1])
         return (adapter.is_absolute() and adapter.name == 'osvanta_capture_mcp.py'
                 and adapter.parent.name == 'tools' and adapter.is_file())
+
+    def _is_registered(self, servers):
+        if self._is_registered_for(servers, self.directory):
+            return True
+        if self._legacy_directory is not None:
+            return self._is_registered_for(servers, self._legacy_directory)
+        return False
+
+    def capture_directory(self, servers=None) -> Path:
+        """Pick the directory registered in Codex Desktop so existing setups stay live."""
+        if servers is None:
+            try:
+                servers = self._servers()
+            except BridgeError:
+                servers = {}
+        if self._is_registered_for(servers, self.directory):
+            return self.directory
+        if (self._legacy_directory is not None
+                and self._is_registered_for(servers, self._legacy_directory)):
+            return self._legacy_directory
+        return self.directory
 
     def _verified_versions(self):
         try:
@@ -210,7 +243,7 @@ class DesktopChats:
         try:
             rpc = JsonRpc(transport, cancel=cancel)
             rpc.request('initialize', {
-                'clientInfo': {'name': 'osvanta_desktop', 'version': '1.0'},
+                'clientInfo': {'name': 'catk_desktop', 'version': '1.0'},
                 'capabilities': {'experimentalApi': True},
             }, timeout=12)
             rpc.notify('initialized')
@@ -230,19 +263,25 @@ class DesktopChats:
                 if not cursor:
                     return projects
 
-    def create(self, scope, question, cancel, *, project: DesktopProject | None = None):
+    def create(self, scope, question, cancel, *, project: DesktopProject | None = None,
+               has_references: bool = False):
         if not question.strip() or len(question) > MAX_QUESTION:
             raise BridgeError(f'请输入 1 至 {MAX_QUESTION} 字的分析问题。')
         servers = self._servers()
         if not self._is_registered(servers):
-            raise BridgeError('请先使用「配置共享」注册 Osvanta 捕获工具，再重启 Codex 的 MCP 服务器。')
+            raise BridgeError('请先使用「配置共享」注册 CATK 捕获工具，再重启 Codex 的 MCP 服务器。')
         instructions = (
-            f'Osvanta 已授权当前聊天访问一个临时快照。工具 {MCP_NAME} / query_capture，'
+            f'CATK 已授权当前聊天访问一个临时快照。工具 {MCP_NAME} / query_capture，'
             f'capture={scope}。先用 operation=describe、arguments={{}} 获取允许的查询，'
             '再对照目标、下发指令、状态与实测反馈。区分未变化、无样本和原因未确认。'
-            '引用工具实际返回的 ev- 或 src- 编号，便于 Osvanta 定位。'
+            '引用工具实际返回的 ev- 或 src- 编号，便于 CATK 定位。'
             '若快照已撤销，请提示用户重新授权。'
         )
+        if has_references:
+            instructions += (
+                '当前快照已绑定项目参考资料，可通过 osvanta_lookup_reference 按类型'
+                '（c/a2l/dbc/requirement）查询已授权版本的代码或需求，并引用工具返回的 src- 编号。'
+            )
         with self._connect(servers, cancel) as (rpc, transport, work):
             params = {'cwd': work, 'ephemeral': False, 'approvalPolicy': 'never',
                       'sandbox': 'read-only', 'environments': []}

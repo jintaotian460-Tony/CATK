@@ -1,6 +1,8 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """Serve one approved AnalysisTools instance over an authenticated local pipe."""
 from __future__ import annotations
@@ -16,7 +18,7 @@ import threading
 
 REQUEST_BYTES = 16 * 1024
 RESPONSE_BYTES = 1024 * 1024
-UNAVAILABLE = 'Osvanta 捕获已撤销或不可用。'
+UNAVAILABLE = 'CATK 捕获已撤销或不可用。'
 _SCOPE = re.compile(r'[0-9a-f]{48}')
 _PREFIX = r'\\.\pipe\osvanta-capture-'
 
@@ -32,6 +34,7 @@ class CaptureLease:
         self.scope = secrets.token_hex(24)
         self._key = secrets.token_bytes(32)
         self._closed = threading.Event()
+        self._lock = threading.Lock()
         self._tools = tools
         self._specs = tools.specs()
         self._evidence = {}
@@ -49,16 +52,18 @@ class CaptureLease:
             raise
 
     def evidence(self, ids):
-        issued = self._evidence
-        return tuple(issued[evidence_id] for evidence_id in ids if evidence_id in issued)
+        with self._lock:
+            issued = self._evidence
+            return tuple(issued[evidence_id] for evidence_id in ids if evidence_id in issued)
 
     def close(self):
         if self._closed.is_set():
             return
         self._closed.set()
-        self._tools = None
-        self._evidence = {}
         self._listener.close()
+        with self._lock:
+            self._tools = None
+            self._evidence = {}
         try:
             self._file.unlink(missing_ok=True)
         except OSError:
@@ -88,28 +93,29 @@ class CaptureLease:
                     continue
 
     def _dispatch(self, request):
-        tools = self._tools
-        if (tools is None or self._closed.is_set() or not isinstance(request, dict)
-                or set(request) != {'operation', 'arguments'}
-                or not isinstance(request['arguments'], dict)):
-            return {'error': UNAVAILABLE}
-        operation = request['operation']
-        arguments = request['arguments']
-        if operation == 'describe' and not arguments:
-            return {'data': {'tools': self._specs, 'project': tools.project_context}}
-        if not any(spec['name'] == operation for spec in self._specs):
-            return {'error': '此捕获未授权该操作。'}
-        try:
-            result = tools.call(operation, arguments)
-            ids = [row['id'] for row in result.get('evidence', result.get('matches', []))]
-            if ids and not self._closed.is_set():
-                self._evidence = {**self._evidence, **dict(
-                    zip(ids, tools.resolve_evidence(ids)))}
-            return {'data': result}
-        except (ValueError, TypeError, OSError, OverflowError) as exc:
-            if isinstance(exc, ValueError):
-                return {'error': str(exc)}
-            return {'error': '此捕获暂时无法完成查询。'}
+        with self._lock:
+            tools = self._tools
+            if (tools is None or self._closed.is_set() or not isinstance(request, dict)
+                    or set(request) != {'operation', 'arguments'}
+                    or not isinstance(request['arguments'], dict)):
+                return {'error': UNAVAILABLE}
+            operation = request['operation']
+            arguments = request['arguments']
+            if operation == 'describe' and not arguments:
+                return {'data': {'tools': self._specs, 'project': tools.project_context}}
+            if not any(spec['name'] == operation for spec in self._specs):
+                return {'error': '此捕获未授权该操作。'}
+            try:
+                result = tools.call(operation, arguments)
+                ids = [row['id'] for row in result.get('evidence', result.get('matches', []))]
+                if ids and not self._closed.is_set():
+                    self._evidence = {**self._evidence, **dict(
+                        zip(ids, tools.resolve_evidence(ids)))}
+                return {'data': result}
+            except (ValueError, TypeError, OSError, OverflowError) as exc:
+                if isinstance(exc, ValueError):
+                    return {'error': str(exc)}
+                return {'error': '此捕获暂时无法完成查询。'}
 
 
 def query_capture(directory: Path, scope, operation, arguments):

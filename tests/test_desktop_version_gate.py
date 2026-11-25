@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from core.codex_bridge import BridgeError, Cancelled
+from core.rpc_transport import BridgeError, Cancelled
 from core.desktop_chats import VERIFIED_DESKTOP_VERSION, DesktopChats
 
 NEW_VERSION = 'codex-cli 0.167.0-alpha.9.9'

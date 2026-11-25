@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """Tests for the analysis assistant (gui/assistant.py) and its wiring into
 MainWindow: the immutable context snapshot, the read-only local analyzer,
@@ -252,7 +252,7 @@ def _make_window(qapp, monkeypatch, tmp_path):
 
     monkeypatch.setattr(MainWindow, '_settings_folder',
                         staticmethod(lambda: tmp_path))
-    return MainWindow('Osvanta Bus Log Analyzer', '00.00.99')
+    return MainWindow('CATK', '00.00.99')
 
 
 @pytest.fixture()
@@ -298,3 +298,53 @@ def test_evidence_navigation_zooms_the_plot(window):
     assert x0 == pytest.approx(0.0, abs=1e-6)
     assert x1 == pytest.approx(1.0, abs=1e-6)
     window.assistant_panel.shutdown()
+
+
+def test_gui_analyze_uses_core_implementation():
+    from core import assistant_analysis
+    from gui import assistant
+
+    assert assistant.analyze is assistant_analysis.analyze
+
+
+def test_analyze_handles_labeled_signal_and_pre_window_on_store_and_snapshot():
+    from core.assistant_analysis import analyze, capture_snapshot
+    from core.signal_store import SignalStore
+
+    store = SignalStore()
+    store.add_series_bulk(
+        channel=1,
+        message_name='ModeMsg',
+        message_id=0x501,
+        signal_name='ModeEnum',
+        unit='',
+        timestamps=np.array([1.0, 2.0, 3.0]),
+        values=np.array([0.0, 1.0, 2.0]),
+        raw_values=['Off', 'Heat', 'Cool'],
+        has_labels=True,
+    )
+    store.add_series_bulk(
+        channel=1,
+        message_name='TempMsg',
+        message_id=0x502,
+        signal_name='Temp',
+        unit='degC',
+        timestamps=np.array([10.0, 11.0]),
+        values=np.array([22.0, 24.0]),
+        raw_values=[],
+        has_labels=False,
+    )
+    enum_key = 'CH1::ModeMsg::ModeEnum'
+    temp_key = 'CH1::TempMsg::Temp'
+
+    enum_ctx = _full_context([enum_key], t0=0.5, t1=2.5, label='区间')
+    res_store = analyze(store, enum_ctx)
+    res_snap = analyze(capture_snapshot(store, enum_ctx))
+    assert any('枚举/文本信号' in f.text and '2 个样本' in f.text for f in res_store.findings)
+    assert any('枚举/文本信号' in f.text and '2 个样本' in f.text for f in res_snap.findings)
+
+    pre_ctx = _full_context([temp_key], t0=-10.0, t1=-5.0, label='区间')
+    pre_store = analyze(store, pre_ctx)
+    pre_snap = analyze(capture_snapshot(store, pre_ctx))
+    assert any(f.kind == '缺失' and '无采样' in f.text for f in pre_store.findings)
+    assert any(f.kind == '缺失' and '无采样' in f.text for f in pre_snap.findings)

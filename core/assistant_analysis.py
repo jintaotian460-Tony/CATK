@@ -1,8 +1,10 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
 
-"""Qt-free, local analysis of a bounded, detached measurement snapshot."""
+"""Qt-free, local analysis over a live SignalStore or a frozen AnalysisSnapshot."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,6 +14,8 @@ from uuid import uuid4
 from weakref import WeakKeyDictionary
 
 import numpy as np
+
+from core.signal_statistics import range_statistics
 
 MAX_ANALYSIS_KEYS = 12
 _SOURCE_IDS: WeakKeyDictionary = WeakKeyDictionary()
@@ -153,68 +157,108 @@ def capture_snapshot(store, context, *, resolver=None, cancel=None) -> AnalysisS
                             limitations, cancelled)
 
 
-# ── Deterministic local analysis over a captured snapshot ─────────────────
-# The same measured facts as the in-app analyzer, but reading only the
-# detached copy — never the live store — so an agent cannot widen its own
-# view of the measurement.
+# ── Unified deterministic local analysis (SignalStore & AnalysisSnapshot) ────
 
 def _fmt(value: float) -> str:
     return f'{value:.6g}'
 
 
-def analyze(snapshot: AnalysisSnapshot, context: AnalysisContext | None = None,
+def analyze(source, context: AnalysisContext | None = None,
             cancel=None) -> AnalysisResult:
-    """Read-only analysis of *context* (default: the snapshot's own context)
-    over the snapshot's frozen samples. ``cancel`` is polled between signals."""
-    ctx = context if context is not None else snapshot.context
+    """Read-only deterministic analysis of *context* (default: ``source.context``)
+    against either a live ``SignalStore`` or a frozen ``AnalysisSnapshot``.
+    ``cancel`` is polled between signals; when it fires the result comes back
+    with whatever was found so far and ``cancelled=True``."""
+    ctx = context if context is not None else getattr(source, 'context', None)
+    if ctx is None:
+        raise ValueError('AnalysisContext is required')
     findings: list[Finding] = []
-    if not ctx.keys:
+    keys = ctx.keys
+    if not keys:
         findings.append(Finding(
-            '缺失', '快照未包含任何信号；请重新捕获上下文。'))
+            '缺失', '未选择任何信号：在信号表选中几行（或先绘制信号），'
+                    '再点「捕获当前上下文」。'))
         return AnalysisResult(ctx, tuple(findings))
+    if len(keys) > MAX_ANALYSIS_KEYS:
+        findings.append(Finding(
+            '缺失', f'上下文含 {len(keys)} 条信号，本地分析仅分析前 '
+                    f'{MAX_ANALYSIS_KEYS} 条。'))
+        keys = keys[:MAX_ANALYSIS_KEYS]
     cancelled = False
-    for key in ctx.keys:
+    for key in keys:
         if cancel is not None and cancel():
             cancelled = True
             break
-        findings.extend(_analyze_key(snapshot, key, ctx))
+        findings.extend(_analyze_key(source, key, ctx))
     return AnalysisResult(ctx, tuple(findings), cancelled=cancelled)
 
 
-def _analyze_key(snapshot: AnalysisSnapshot, key: str,
-                 ctx: AnalysisContext) -> list[Finding]:
+def _analyze_key(source, key: str, ctx: AnalysisContext) -> list[Finding]:
     name = key.rsplit('::', 1)[-1]
-    status = snapshot.statuses.get(key, 'missing')
-    series = snapshot.get_series(key)
-    if series is None or status == 'missing':
-        return [Finding('缺失',
-                        f'{key} 不在本次捕获的信号中（可能来自其他日志或已删除）。')]
-    ts, vs = series.numpy_timestamps(), series.numpy_values()
-    if not len(ts) or status == 'empty':
+
+    def evidence(start: float, end: float, label: str) -> Evidence:
+        return Evidence(key, start, end, label, ctx.source_id, ctx.snapshot_id)
+
+    statuses = getattr(source, 'statuses', None)
+    series = source.get_series(key) if source is not None else None
+    if (source is None or series is None
+            or (statuses is not None and statuses.get(key, 'missing') == 'missing')):
+        return [Finding(
+            '缺失', f'{key} 不在当前测量中（可能来自其他日志或已删除）。')]
+
+    ts = series.numpy_timestamps()
+    vs = series.numpy_values()
+    if statuses is not None and (not len(ts) or statuses.get(key) == 'empty'):
         return [Finding('缺失', f'{name} 在捕获区间内无采样。')]
+
     t0, t1 = ctx.t0, ctx.t1
     if t0 is None or t1 is None:
+        if not len(ts):
+            return [Finding('缺失', f'{name} 无任何样本。')]
         t0, t1 = float(ts[0]), float(ts[-1])
+
+    if series.has_labels:
+        count = int(((ts >= t0) & (ts <= t1)).sum())
+        return [Finding(
+            '现象',
+            f'{name} 为枚举/文本信号，区间内 {count} 个样本；本地数值分析暂不支持标签信号。',
+            evidence(t0, t1, f'{name} 全区间'))]
+
+    unit = series.unit or ''
     window = (ts >= t0) & (ts <= t1) & np.isfinite(vs)
     if not window.any():
-        return [Finding('缺失', f'{name} 在 {_fmt(t0)}–{_fmt(t1)} s 内无有效数值采样。',
-                        Evidence(key, t0, t1, f'{name} 无采样区间',
-                                 ctx.source_id, ctx.snapshot_id))]
+        held = range_statistics(ts, vs, t0, t1, hold=True)
+        if held is not None and held.samples == 0:
+            return [Finding(
+                '缺失',
+                f'{name} 在 {_fmt(t0)}–{_fmt(t1)} s 内无采样；区间外最后采样保持为 '
+                f'{_fmt(held.mean)} {unit}。',
+                evidence(t0, t1, f'{name} 无采样区间'))]
+        if ((ts >= t0) & (ts <= t1)).any():
+            return [Finding(
+                '缺失',
+                f'{name} 在 {_fmt(t0)}–{_fmt(t1)} s 内无有效数值采样（全为 NaN）。',
+                evidence(t0, t1, f'{name} 无采样区间'))]
+        return [Finding(
+            '缺失',
+            f'{name} 在 {_fmt(t0)}–{_fmt(t1)} s 内无采样。',
+            evidence(t0, t1, f'{name} 无采样区间'))]
+
     tw, vw = ts[window], vs[window]
-    unit = series.unit or ''
-    span_ev = Evidence(key, float(tw[0]), float(tw[-1]), f'{name} 统计区间',
-                       ctx.source_id, ctx.snapshot_id)
-    minimum = float(np.min(vw)); maximum = float(np.max(vw))
-    mean = float(np.mean(vw)); std = float(np.std(vw))
+    span_ev = evidence(float(tw[0]), float(tw[-1]), f'{name} 统计区间')
+    minimum = float(np.min(vw))
+    maximum = float(np.max(vw))
+    mean = float(np.mean(vw))
+    std = float(np.std(vw))
     findings = [Finding(
         '现象',
-        f'{name}：{len(vw)} 个有效样本，最小 {minimum:.6g} ~ 最大 {maximum:.6g} '
-        f'{unit}，均值 {mean:.6g}，标准差 {std:.6g}。',
+        f'{name}：{len(vw)} 个有效样本，最小 {_fmt(minimum)} ~ 最大 {_fmt(maximum)} '
+        f'{unit}，均值 {_fmt(mean)}，标准差 {_fmt(std)}。',
         span_ev)]
     if len(vw) >= 2 and std == 0.0:
         findings[0] = Finding(
             '现象',
-            f'{name}：区间内恒定于 {mean:.6g} {unit}（{len(vw)} 个样本）。',
+            f'{name}：区间内恒定于 {_fmt(mean)} {unit}（{len(vw)} 个样本）。',
             span_ev)
     elif len(vw) >= 2:
         deltas = np.diff(vw)
@@ -226,10 +270,10 @@ def _analyze_key(snapshot: AnalysisSnapshot, key: str,
             findings.append(Finding(
                 '现象',
                 f'{name}：最大单步变化 {step:+.6g} {unit}'
-                f'（{float(vw[idx]):.6g} → {float(vw[idx + 1]):.6g}）'
-                f'@ {t_after:.6g} s。',
-                Evidence(key, max(t0, t_before - pad), min(t1, t_after + pad),
-                         f'{name} 单步变化', ctx.source_id, ctx.snapshot_id)))
+                f'（{_fmt(float(vw[idx]))} → {_fmt(float(vw[idx + 1]))}）'
+                f'@ {_fmt(t_after)} s。',
+                evidence(max(t0, t_before - pad), min(t1, t_after + pad),
+                         f'{name} 单步变化')))
     if len(tw) >= 3:
         dts = np.diff(tw)
         if (dts > 0).all():
@@ -239,9 +283,9 @@ def _analyze_key(snapshot: AnalysisSnapshot, key: str,
                 gi = int(np.argmax(dts))
                 findings.append(Finding(
                     '现象',
-                    f'{name}：采样间隔异常，最大 {largest:.6g} s'
-                    f'（约 {largest / median:.1f}× 中位 {median:.6g} s）'
-                    f'@ {float(tw[gi + 1]):.6g} s。',
-                    Evidence(key, float(tw[gi]), float(tw[gi + 1]),
-                             f'{name} 采样间隔', ctx.source_id, ctx.snapshot_id)))
+                    f'{name}：采样间隔异常，最大 {_fmt(largest)} s'
+                    f'（约 {largest / median:.1f}× 中位 {_fmt(median)} s）'
+                    f'@ {_fmt(float(tw[gi + 1]))} s。',
+                    evidence(float(tw[gi]), float(tw[gi + 1]),
+                             f'{name} 采样间隔')))
     return findings

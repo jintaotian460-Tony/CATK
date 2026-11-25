@@ -102,3 +102,41 @@ def test_lookup_rejects_changed_source_and_unbound_tool(project_home):
     assert all(s['name'] != 'osvanta_lookup_reference' for s in unbound.specs())
     with pytest.raises(ValueError, match='未授权'):
         unbound.call('osvanta_lookup_reference', {'kind': 'c', 'query': 'DemoMotorCmd'})
+
+
+def test_custom_version_pattern_ensure_and_safe_catalog_load(tmp_path):
+    from core.project_agent import (
+        catalog_load_safe, catalog_path, ensure_catalog_file,
+    )
+
+    cfg = catalog_path(tmp_path)
+    created = ensure_catalog_file(cfg)
+    assert created == cfg and json.loads(created.read_text(encoding='utf-8')) == {'agents': []}
+
+    src = tmp_path / 'tms.c'
+    src.write_text('int x = 1;\n', encoding='utf-8')
+    cfg.write_text(json.dumps({
+        'agents': [{
+            'name': 'KP31',
+            'version_pattern': r'_R(\d{2})',
+            'releases': {'05': [{'kind': 'c', 'path': str(src)}]},
+        }],
+    }), encoding='utf-8')
+    agents, err = catalog_load_safe(cfg)
+    assert err == '' and 'KP31' in agents
+    bound = bind_project(agents['KP31'], None, 'test_R05.blf')
+    assert bound.version == '05' and bound.basis == 'filename_hint'
+
+    cfg.write_text('{bad json', encoding='utf-8')
+    empty, bad_err = catalog_load_safe(cfg)
+    assert empty == {} and bad_err
+
+    cfg.write_text(json.dumps({
+        'agents': [{
+            'name': 'BadRegex',
+            'version_pattern': '[unclosed',
+            'releases': {},
+        }],
+    }), encoding='utf-8')
+    empty2, regex_err = catalog_load_safe(cfg)
+    assert empty2 == {} and '正则' in regex_err

@@ -614,7 +614,16 @@ class MainWindow(QMainWindow):
         # The analysis assistant: hidden until asked for, so the plot keeps
         # its width. Right area beside the (floating) Signals window.
         from gui.assistant import AssistantPanel
-        self.assistant_panel = AssistantPanel(project_home=app_data.per_user_folder())
+        legacy_home = (
+            None
+            if os.environ.get(app_data.DATA_DIR_ENV_VAR)
+            or os.environ.get(app_data.LEGACY_DATA_DIR_ENV_VAR)
+            else app_data.legacy_per_user_folder()
+        )
+        self.assistant_panel = AssistantPanel(
+            project_home=app_data.per_user_folder(),
+            legacy_home=legacy_home,
+        )
         self.assistant_dock = QDockWidget('分析助手', self)
         self.assistant_dock.setObjectName('AssistantDock')
         self.assistant_dock.setAllowedAreas(
@@ -3046,6 +3055,9 @@ class MainWindow(QMainWindow):
     def _assistant_first_show(self, visible: bool) -> None:
         if visible and not self._closing:
             self.assistant_panel.refresh_codex_projects()
+            self.assistant_panel.reload_reference_catalog()
+            self.assistant_panel.update_reference_preview(
+                self.store, self.measurement_path or '')
             if not self.assistant_panel.is_running() and self.assistant_panel.context() is None:
                 self._assistant_recapture()
 
@@ -3054,13 +3066,36 @@ class MainWindow(QMainWindow):
         self.assistant_panel.revoke_shared()
         context = capture_context(self)
         self.assistant_panel.set_context(context)
+        self.assistant_panel.update_reference_preview(
+            self.store, self.measurement_path or '')
         # Capture is the whole gesture: snapshot, freeze, analyse.
         if self.store is not None and context.keys:
             self.assistant_panel.start_analysis(self.store)
 
     def _assistant_locate_evidence(self, evidence) -> None:
-        """Zoom the plot onto one piece of assistant evidence; plot its
-        signal again if the user removed it since the analysis."""
+        """Zoom the plot onto one piece of assistant evidence, or inspect a
+        project reference citation."""
+        from core.project_agent import ReferenceEvidence
+        if isinstance(evidence, ReferenceEvidence):
+            raw_path = evidence.local_locator
+            if ':' in raw_path:
+                head, tail = raw_path.rsplit(':', 1)
+                if tail.isdigit():
+                    raw_path = head
+            local_file = Path(raw_path.split('!/', 1)[0])
+            target_dir = local_file.parent if local_file.parent.is_dir() else None
+            box = QMessageBox(self)
+            box.setWindowTitle('项目参考资料证据')
+            box.setTextFormat(Qt.TextFormat.PlainText)
+            box.setText(f'{evidence.citation}\n{evidence.local_locator}')
+            box.setInformativeText(evidence.excerpt)
+            open_btn = (box.addButton('打开所在目录', QMessageBox.ButtonRole.ActionRole)
+                        if target_dir is not None else None)
+            box.addButton(QMessageBox.StandardButton.Close)
+            box.exec()
+            if open_btn is not None and box.clickedButton() is open_btn:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(target_dir)))
+            return
         from core.assistant_analysis import Evidence, measurement_source_id
         if (not isinstance(evidence, Evidence) or self.store is None
                 or evidence.source_id != measurement_source_id(self.store)):
@@ -3094,8 +3129,9 @@ class MainWindow(QMainWindow):
             except CalculatedSignalError:
                 return None
 
+        bound_project = panel.resolve_bound_project(store, self.measurement_path or '')
         snapshot = capture_snapshot(store, context, resolver=resolver)
-        panel.begin_shared(snapshot, question, project)
+        panel.begin_shared(snapshot, question, project, bound_project=bound_project)
 
     # Export formats, in the order shown in the picker. Add a new format by
     # appending one (label, file_filter, default_ext, handler) entry — the
@@ -3441,6 +3477,8 @@ class MainWindow(QMainWindow):
             self._log('CSV reconstruction loaded from a single BLF; embedded matrix definitions and validity records are in use.')
         self.signal_dock.setVisible(self._signals_window_visible)
         self.store = store
+        self.assistant_panel.update_reference_preview(
+            self.store, self.measurement_path or '')
         self._prepare_playback()
         self._update_action_states()
         # Expose store immediately so pending plots and post-decode plots work

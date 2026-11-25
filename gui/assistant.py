@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """The analysis assistant: a docked panel that analyses what is currently
 on the plot, shows findings with evidence, and navigates the plot back to
@@ -18,7 +18,6 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 from PySide6.QtCore import QObject, QThread, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -38,13 +37,16 @@ from PySide6.QtWidgets import (
 
 from core.assistant_analysis import (
     AnalysisContext, AnalysisResult, Evidence, Finding, MAX_ANALYSIS_KEYS,
-    measurement_source_id,
+    analyze, measurement_source_id,
 )
 from core.assistant_tools import AnalysisTools
-from core.codex_bridge import BridgeError, Cancelled
 from core.desktop_chats import DesktopChats, DesktopProject, MAX_QUESTION, chat_url
+from core.project_agent import (
+    BoundProject, ProjectAgent, ReferenceEvidence, bind_project,
+    catalog_load_safe, catalog_path, ensure_catalog_file,
+)
+from core.rpc_transport import BridgeError, Cancelled
 from core.shared_capture import CaptureLease
-from core.signal_statistics import range_statistics
 
 #: How the statistics range names itself, mapped to the panel's language.
 _RANGE_LABELS = {
@@ -82,118 +84,6 @@ def capture_context(window) -> AnalysisContext:
                            source_id=measurement_source_id(store) if store is not None else '')
 
 
-# ── Local analyzer (pure, no Qt) ───────────────────────────────────────────
-
-def analyze(store, context: AnalysisContext,
-            cancel=None) -> AnalysisResult:
-    """Read-only analysis of *context* against *store*. ``cancel`` is polled
-    between signals; when it fires the result comes back with whatever was
-    found so far and ``cancelled=True``."""
-    findings: list[Finding] = []
-    keys = context.keys
-    if not keys:
-        findings.append(Finding(
-            '缺失', '未选择任何信号：在信号表选中几行（或先绘制信号），'
-                    '再点「捕获当前上下文」。'))
-        return AnalysisResult(context, tuple(findings))
-    if len(keys) > MAX_ANALYSIS_KEYS:
-        findings.append(Finding(
-            '缺失', f'上下文含 {len(keys)} 条信号，本地分析仅分析前 '
-                    f'{MAX_ANALYSIS_KEYS} 条（首版上限）。'))
-        keys = keys[:MAX_ANALYSIS_KEYS]
-    cancelled = False
-    for key in keys:
-        if cancel is not None and cancel():
-            cancelled = True
-            break
-        findings.extend(_analyze_signal(store, key, context))
-    return AnalysisResult(context, tuple(findings), cancelled=cancelled)
-
-
-def _analyze_signal(store, key: str, context: AnalysisContext) -> list[Finding]:
-    name = key.rsplit('::', 1)[-1]
-
-    def evidence(start, end, label):
-        return Evidence(key, start, end, label, source_id=context.source_id)
-
-    series = store.get_series(key) if store is not None else None
-    if series is None:
-        return [Finding(
-            '缺失', f'{key} 不在当前测量中（可能来自其他日志或已删除的计算信号）。')]
-    ts = series.numpy_timestamps()
-    vs = series.numpy_values()
-    unit = series.unit or ''
-    t0, t1 = context.t0, context.t1
-    if t0 is None or t1 is None:
-        if not len(ts):
-            return [Finding('缺失', f'{name} 无任何样本。')]
-        t0, t1 = float(ts[0]), float(ts[-1])
-
-    if series.has_labels:
-        count = int(((ts >= t0) & (ts <= t1)).sum())
-        return [Finding(
-            '现象',
-            f'{name} 为枚举/文本信号，区间内 {count} 个样本；本地数值分析暂不支持标签信号。',
-            evidence(t0, t1, f'{name} 全区间'))]
-
-    window = (ts >= t0) & (ts <= t1)
-    if not window.any():
-        held = range_statistics(ts, vs, t0, t1, hold=True)
-        if held is not None and held.samples == 0:
-            return [Finding(
-                '缺失',
-                f'{name} 在 {_fmt(t0)}–{_fmt(t1)} s 内无采样；区间外最后采样保持为 '
-                f'{_fmt(held.mean)} {unit}。',
-                evidence(t0, t1, f'{name} 无采样区间'))]
-        return [Finding('缺失', f'{name} 在 {_fmt(t0)}–{_fmt(t1)} s 内无采样。',
-                        evidence(t0, t1, f'{name} 无采样区间'))]
-
-    stats = range_statistics(ts, vs, t0, t1)
-    tw = ts[window]
-    vw = vs[window]
-    span_ev = evidence(float(tw[0]), float(tw[-1]), f'{name} 统计区间')
-    findings = [Finding(
-        '现象',
-        f'{name}：{stats.samples} 个样本，最小 {_fmt(stats.minimum)} ~ '
-        f'最大 {_fmt(stats.maximum)} {unit}，均值 {_fmt(stats.mean)}，'
-        f'标准差 {_fmt(stats.std)}。',
-        span_ev)]
-
-    if stats.samples >= 2 and stats.std == 0.0:
-        findings[0] = Finding(
-            '现象',
-            f'{name}：区间内恒定于 {_fmt(stats.mean)} {unit}（{stats.samples} 个样本）。',
-            span_ev)
-    elif len(vw) >= 2:
-        deltas = np.diff(vw)
-        idx = int(np.argmax(np.abs(deltas)))
-        step = float(deltas[idx])
-        if step != 0.0:
-            t_before, t_after = float(tw[idx]), float(tw[idx + 1])
-            pad = (t_after - t_before) or max((t1 - t0) * 0.01, 1e-3)
-            findings.append(Finding(
-                '现象',
-                f'{name}：最大单步变化 {step:+.6g} {unit}'
-                f'（{_fmt(float(vw[idx]))} → {_fmt(float(vw[idx + 1]))}）'
-                f'@ {_fmt(t_after)} s。',
-                evidence(t_before - pad, t_after + pad, f'{name} 单步变化')))
-
-    if len(tw) >= 3:
-        dts = np.diff(tw)
-        if (dts > 0).all():
-            median = float(np.median(dts))
-            largest = float(dts.max())
-            if median > 0.0 and largest > 3.0 * median:
-                gi = int(np.argmax(dts))
-                findings.append(Finding(
-                    '现象',
-                    f'{name}：采样间隔异常，最大 {_fmt(largest)} s'
-                    f'（约 {largest / median:.1f}× 中位 {_fmt(median)} s）'
-                    f'@ {_fmt(float(tw[gi + 1]))} s。',
-                    evidence(float(tw[gi]), float(tw[gi + 1]), f'{name} 采样间隔')))
-    return findings
-
-
 # ── Worker thread ──────────────────────────────────────────────────────────
 
 class _AnalysisWorker(QObject):
@@ -226,6 +116,7 @@ class _DesktopRequest:
     scope: str = ''
     thread_id: str = ''
     project: DesktopProject | None = None
+    has_references: bool = False
 
 
 class _DesktopWorker(QObject):
@@ -247,8 +138,10 @@ class _DesktopWorker(QObject):
             if request.thread_id:
                 result = self._desktop.read(request.thread_id, cancelled)
             elif request.scope:
-                result = self._desktop.create(request.scope, request.question, cancelled,
-                                              project=request.project)
+                kwargs = {'project': request.project}
+                if request.has_references:
+                    kwargs['has_references'] = True
+                result = self._desktop.create(request.scope, request.question, cancelled, **kwargs)
             else:
                 result = self._desktop.projects(cancelled)
             if cancelled():
@@ -275,7 +168,9 @@ class AssistantPanel(QWidget):
     recaptureRequested = Signal()
     shareRequested = Signal(str, object)
 
-    def __init__(self, parent: QWidget | None = None, *, project_home: Path | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *,
+                 project_home: Path | None = None,
+                 legacy_home: Path | None = None) -> None:
         super().__init__(parent)
         self.setObjectName('AssistantPanel')
         self._context: AnalysisContext | None = None
@@ -284,6 +179,10 @@ class AssistantPanel(QWidget):
         self._thread: QThread | None = None
         self._worker: _AnalysisWorker | None = None
         self._last_store = None
+        self._last_measurement_path = ''
+        self._ref_home = Path(project_home) if project_home is not None else None
+        self._ref_agents: dict[str, ProjectAgent] = {}
+        self._ref_error = ''
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -322,8 +221,14 @@ class AssistantPanel(QWidget):
         self.evidence_list.itemActivated.connect(self._evidence_activated)
         layout.addWidget(self.evidence_list, stretch=1)
 
-        self._desktop = (DesktopChats(project_home / 'codex-captures')
-                         if project_home is not None and sys.platform == 'win32' else None)
+        self._desktop = (
+            DesktopChats(
+                project_home / 'codex-captures',
+                legacy_directory=(Path(legacy_home) / 'codex-captures'
+                                  if legacy_home is not None else None),
+            )
+            if project_home is not None and sys.platform == 'win32' else None
+        )
         self._shared_lease: CaptureLease | None = None
         self._shared_chat_id = ''
         self._shared_question = ''
@@ -349,6 +254,32 @@ class AssistantPanel(QWidget):
             projects.addWidget(self.refresh_projects_btn)
             layout.addLayout(projects)
 
+            refs = QHBoxLayout()
+            refs.addWidget(QLabel('参考资料'))
+            self.ref_project_combo = QComboBox()
+            self.ref_project_combo.setAccessibleName('项目参考资料')
+            self.ref_project_combo.addItem('不绑定资料', None)
+            self.ref_project_combo.currentIndexChanged.connect(self._on_ref_project_changed)
+            refs.addWidget(self.ref_project_combo, stretch=1)
+            self.ref_version_combo = QComboBox()
+            self.ref_version_combo.setAccessibleName('参考版本')
+            self.ref_version_combo.addItem('自动识别', '')
+            self.ref_version_combo.setEnabled(False)
+            self.ref_version_combo.currentIndexChanged.connect(self._on_ref_version_changed)
+            refs.addWidget(self.ref_version_combo)
+            self.ref_reload_btn = QPushButton('刷新')
+            self.ref_reload_btn.clicked.connect(self.reload_reference_catalog)
+            refs.addWidget(self.ref_reload_btn)
+            self.ref_config_btn = QPushButton('配置…')
+            self.ref_config_btn.setToolTip('打开项目参考资料目录与 assistant-project-agents.json')
+            self.ref_config_btn.clicked.connect(self._open_reference_config)
+            refs.addWidget(self.ref_config_btn)
+            layout.addLayout(refs)
+
+            self.ref_status_label = QLabel('未绑定项目参考资料')
+            self.ref_status_label.setWordWrap(True)
+            layout.addWidget(self.ref_status_label)
+
             self.question_input = QPlainTextEdit()
             self.question_input.setPlaceholderText('例如：目标变了，执行器为什么没跟上？')
             self.question_input.setFixedHeight(52)
@@ -364,16 +295,17 @@ class AssistantPanel(QWidget):
             self.cancel_codex_btn = QPushButton('取消')
             self.cancel_codex_btn.clicked.connect(self._cancel_desktop)
             setup_btn = QPushButton('配置共享')
-            setup_btn.setToolTip('复制注册 Osvanta 捕获工具的 PowerShell 命令')
+            setup_btn.setToolTip('复制注册 CATK 捕获工具的 PowerShell 命令')
             setup_btn.clicked.connect(self._copy_share_setup)
             for button in (self.share_btn, self.read_chat_btn, self.revoke_btn,
                            self.cancel_codex_btn, setup_btn):
                 share_buttons.addWidget(button)
             layout.addLayout(share_buttons)
-            layout.addWidget(QLabel('Codex 证据（双击定位到波形）'))
+            layout.addWidget(QLabel('Codex 证据（双击定位波形或查看资料）'))
             self.codex_evidence_list = QListWidget()
             self.codex_evidence_list.itemActivated.connect(self._evidence_activated)
             layout.addWidget(self.codex_evidence_list, stretch=1)
+            self.reload_reference_catalog()
 
         self.privacy_label = QLabel(self.PRIVACY_NOTE)
         self.privacy_label.setWordWrap(True)
@@ -579,6 +511,101 @@ class AssistantPanel(QWidget):
     def codex_status(self, message: str) -> None:
         self.status_label.setText(f'Codex：{message}')
 
+    def reload_reference_catalog(self) -> None:
+        if self._desktop is None or self._ref_home is None:
+            return
+        selected_agent = self.ref_project_combo.currentData()
+        selected_version = self.ref_version_combo.currentData() or ''
+        agents, error = catalog_load_safe(catalog_path(self._ref_home))
+        self._ref_agents = agents
+        self._ref_error = error
+        combo = self.ref_project_combo
+        blocked = combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem('不绑定资料', None)
+            index = 0
+            for name in sorted(agents):
+                combo.addItem(name, name)
+                if name == selected_agent:
+                    index = combo.count() - 1
+            combo.setCurrentIndex(index)
+        finally:
+            combo.blockSignals(blocked)
+        self._populate_reference_versions(
+            keep_version=selected_version if combo.currentData() == selected_agent else '',
+        )
+        self.update_reference_preview(self._last_store, self._last_measurement_path)
+
+    def _populate_reference_versions(self, keep_version: str = '') -> None:
+        if self._desktop is None:
+            return
+        agent_name = self.ref_project_combo.currentData()
+        agent = self._ref_agents.get(agent_name) if agent_name else None
+        combo = self.ref_version_combo
+        blocked = combo.blockSignals(True)
+        try:
+            combo.clear()
+            combo.addItem('自动识别', '')
+            index = 0
+            if agent is not None:
+                for version in sorted(agent.releases):
+                    combo.addItem(version, version)
+                    if version == keep_version:
+                        index = combo.count() - 1
+            combo.setCurrentIndex(index)
+        finally:
+            combo.blockSignals(blocked)
+        idle = self._desktop_request is None and not self._shutting_down
+        combo.setEnabled(idle and agent is not None)
+
+    def _on_ref_project_changed(self) -> None:
+        self._populate_reference_versions()
+        self.revoke_shared()
+        self.update_reference_preview(self._last_store, self._last_measurement_path)
+
+    def _on_ref_version_changed(self) -> None:
+        self.revoke_shared()
+        self.update_reference_preview(self._last_store, self._last_measurement_path)
+
+    def _open_reference_config(self) -> None:
+        if self._ref_home is None:
+            return
+        path = ensure_catalog_file(catalog_path(self._ref_home))
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
+        self.codex_status(f'已打开资料配置目录：{path.name}')
+
+    def resolve_bound_project(self, store=None, measurement_path: str = '') -> BoundProject | None:
+        if self._desktop is None:
+            return None
+        agent_name = self.ref_project_combo.currentData()
+        if not agent_name or agent_name not in self._ref_agents:
+            return None
+        manual = self.ref_version_combo.currentData() or ''
+        return bind_project(self._ref_agents[agent_name], store, measurement_path,
+                            manual_version=manual)
+
+    def update_reference_preview(self, store=None, measurement_path: str = '') -> None:
+        self._last_store = store
+        self._last_measurement_path = measurement_path or ''
+        if self._desktop is None:
+            return
+        if self._ref_error:
+            self.ref_status_label.setText(f'资料配置读取失败：{self._ref_error}')
+            return
+        bound = self.resolve_bound_project(store, measurement_path)
+        if bound is None:
+            self.ref_status_label.setText(
+                '未绑定项目参考资料'
+                if self._ref_agents
+                else '未绑定项目参考资料（点「配置…」登记本地代码/需求）'
+            )
+            return
+        kinds = sorted({r.kind for r in (*bound.release_references, *bound.project_references)})
+        self.ref_status_label.setText(
+            f'已绑定：{bound.name} · {bound.version_label} · 资料：{"/".join(kinds) or "无"}'
+        )
+
     def _update_desktop_buttons(self) -> None:
         if self._desktop is None:
             return
@@ -586,6 +613,10 @@ class AssistantPanel(QWidget):
         idle = not busy and not self._shutting_down
         self.codex_project_combo.setEnabled(idle)
         self.refresh_projects_btn.setEnabled(idle)
+        self.ref_project_combo.setEnabled(idle)
+        self.ref_version_combo.setEnabled(idle and self.ref_project_combo.currentData() is not None)
+        self.ref_reload_btn.setEnabled(idle)
+        self.ref_config_btn.setEnabled(idle)
         self.share_btn.setEnabled(idle and (bool(self._shared_chat_id)
                                             or self.codex_project_combo.currentIndex() >= 0))
         self.share_btn.setText('打开 Codex 聊天' if self._shared_chat_id else '在 Codex 中分析')
@@ -618,6 +649,7 @@ class AssistantPanel(QWidget):
         if not question or len(question) > MAX_QUESTION:
             self.codex_status(f'请输入 1 至 {MAX_QUESTION} 字的分析问题。')
             return
+        bound = self.resolve_bound_project(self._last_store, self._last_measurement_path)
         prompt = QMessageBox(self)
         prompt.setWindowTitle('共享到 Codex 桌面端')
         prompt.setTextFormat(Qt.TextFormat.PlainText)
@@ -627,28 +659,45 @@ class AssistantPanel(QWidget):
         project_label = project.name if project else '不归入项目'
         roots = '\n'.join(map(str, project.roots)) if project else ''
         destination = f'Codex 项目：{project_label}' + (f'\n{roots}' if roots else '')
+        if bound is not None:
+            kinds = sorted({r.kind for r in (*bound.release_references, *bound.project_references)})
+            kinds_text = '/'.join(kinds) or '无'
+            destination += f'\n项目参考资料：{bound.name} · {bound.version_label}（{kinds_text}）'
         prompt.setInformativeText(f'{destination}\n\n{self.context_label.text()}')
         prompt.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
         prompt.setDefaultButton(QMessageBox.StandardButton.Cancel)
         prompt.button(QMessageBox.StandardButton.Yes).setText('授权并打开')
         if (prompt.exec() == QMessageBox.StandardButton.Yes and context is self._context
-                and project == self.codex_project_combo.currentData() and not self._shutting_down
+                and project == self.codex_project_combo.currentData()
+                and bound == self.resolve_bound_project(self._last_store, self._last_measurement_path)
+                and not self._shutting_down
                 and self._desktop_request is None):
             self.shareRequested.emit(question, project)
 
-    def begin_shared(self, snapshot, question: str, project: DesktopProject | None) -> None:
+    def begin_shared(self, snapshot, question: str, project: DesktopProject | None,
+                     *, bound_project: BoundProject | None = None) -> None:
         if self._desktop is None or self._desktop_request is not None or self._shutting_down:
             return
         if self._shared_lease is not None:
             self.revoke_shared()
         try:
-            self._shared_lease = CaptureLease(AnalysisTools(snapshot), self._desktop.directory)
+            self._shared_lease = CaptureLease(
+                AnalysisTools(snapshot, bound_project),
+                self._desktop.capture_directory(),
+            )
         except OSError:
             self.codex_status('无法开启本机捕获工具。')
             return
-        self._start_desktop(_DesktopRequest(threading.Event(), question=question,
-                                          scope=self._shared_lease.scope, project=project),
-                            'Codex 正在分析（几分钟，取消点「取消」）…')
+        self._start_desktop(
+            _DesktopRequest(
+                threading.Event(),
+                question=question,
+                scope=self._shared_lease.scope,
+                project=project,
+                has_references=bound_project is not None,
+            ),
+            'Codex 正在分析（几分钟，取消点「取消」）…',
+        )
 
     def _open_shared_chat(self) -> None:
         if QDesktopServices.openUrl(QUrl(chat_url(self._shared_chat_id))):
@@ -700,7 +749,7 @@ class AssistantPanel(QWidget):
             transcript, ids = answer
             evidence = self._shared_lease.evidence(ids) if self._shared_lease else ()
             self.findings_box.setPlainText(
-                f'【从 Osvanta 发起】\n{self._shared_question}\n\n'
+                f'【从 CATK 发起】\n{self._shared_question}\n\n'
                 + (transcript or '（聊天暂无回复）'))
             self.codex_evidence_list.clear()
             for ev in evidence:
@@ -708,6 +757,11 @@ class AssistantPanel(QWidget):
                     name = ev.key.rsplit('::', 1)[-1]
                     item = QListWidgetItem(
                         f'[{ev.evidence_id}] {name} · {_fmt(ev.t0)}–{_fmt(ev.t1)} s · {ev.text}')
+                    item.setData(Qt.ItemDataRole.UserRole, ev)
+                    self.codex_evidence_list.addItem(item)
+                elif isinstance(ev, ReferenceEvidence):
+                    item = QListWidgetItem(f'[{ev.evidence_id}] {ev.citation}')
+                    item.setToolTip(f'{ev.local_locator}\n\n{ev.excerpt}')
                     item.setData(Qt.ItemDataRole.UserRole, ev)
                     self.codex_evidence_list.addItem(item)
             self.codex_status('已刷新 Codex 聊天。')
@@ -739,10 +793,12 @@ class AssistantPanel(QWidget):
         """Retire the old measurement, scope and all its results."""
         self._cancelled = True
         self._last_store = None
+        self._last_measurement_path = ''
         self._context = None
         self.context_label.setText('（尚未捕获）')
         self.context_label.setToolTip('')
         self.evidence_list.clear()
         self.findings_box.clear()
         self.revoke_shared()
+        self.update_reference_preview(None, '')
         self.status_label.setText(f'{reason}，请重新捕获上下文。')

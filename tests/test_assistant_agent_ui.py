@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from core.codex_bridge import BridgeError
+from core.rpc_transport import BridgeError
 from core.desktop_chats import DesktopChats, DesktopProject
 
 
@@ -39,7 +39,8 @@ def test_codex_project_list_refresh_and_persistence(qapp, monkeypatch, tmp_path)
                 '不归入项目', '04_Software', 'P717_SVN',
             ]
             assert combo.currentData() == expected
-            assert not hasattr(panel, 'agent_btn') and not hasattr(panel, 'project_agent_combo')
+            assert not hasattr(panel, 'agent_btn')
+            assert panel.ref_project_combo.currentData() is None
             combo.setCurrentIndex(2)
             assert combo.currentData() == p717
             assert str(p717.roots[0]) == combo.toolTip()

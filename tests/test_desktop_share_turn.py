@@ -13,7 +13,7 @@ from uuid import UUID
 
 import pytest
 
-from core.codex_bridge import BridgeError, Cancelled
+from core.rpc_transport import BridgeError, Cancelled
 from core.desktop_chats import DesktopChats
 
 THREAD_ID = '123e4567-e89b-12d3-a456-426614174000'

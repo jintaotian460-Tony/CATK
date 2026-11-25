@@ -1,14 +1,17 @@
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright (c) 2026 Tony Tian (CATK)
 
-"""Local, version-scoped references for an Osvanta project Agent."""
+"""Local, version-scoped references for a CATK project Agent."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 from xml.etree import ElementTree
@@ -17,6 +20,7 @@ from zipfile import BadZipFile, ZipFile
 import numpy as np
 
 
+CATALOG_FILENAME = 'assistant-project-agents.json'
 KINDS = ('c', 'a2l', 'dbc', 'requirement')
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_MATCHES = 4
@@ -55,6 +59,7 @@ class ProjectAgent:
     references: tuple[Reference, ...] = ()
     version_signal: str = ''
     version_values: dict[int, str] | None = None
+    version_pattern: str = ''
 
 
 @dataclass(frozen=True)
@@ -125,6 +130,30 @@ def _references(rows) -> tuple[Reference, ...]:
     return tuple(out)
 
 
+def catalog_path(project_home: Path) -> Path:
+    return Path(project_home) / CATALOG_FILENAME
+
+
+def ensure_catalog_file(path: Path) -> Path:
+    """Create an empty ProjectAgent catalog file if none exists yet."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open('x', encoding='utf-8') as stream:
+            stream.write('{\n  "agents": []\n}\n')
+    except FileExistsError:
+        pass
+    return path
+
+
+def catalog_load_safe(path: Path) -> tuple[dict[str, ProjectAgent], str]:
+    """Load *path*, returning ``({}, error_message)`` on corrupt or invalid config."""
+    try:
+        return load_catalog(Path(path)), ''
+    except (OSError, ValueError, TypeError, UnicodeDecodeError) as exc:
+        return {}, str(exc)
+
+
 def load_catalog(path: Path) -> dict[str, ProjectAgent]:
     if not path.is_file():
         return {}
@@ -152,9 +181,18 @@ def load_catalog(path: Path) -> dict[str, ProjectAgent]:
         values = row.get('version_values', {})
         if not isinstance(signal, str) or not isinstance(values, dict) or (values and not signal):
             raise ValueError('版本信号配置错误。')
+        pattern = row.get('version_pattern', '')
+        if not isinstance(pattern, str):
+            raise ValueError('版本匹配规则必须是字符串。')
+        if pattern:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError('版本匹配正则表达式无效。') from exc
         agents[name] = ProjectAgent(
             name, releases, default, _references(row.get('references', [])),
             signal, {int(code): _token(version) for code, version in values.items()},
+            pattern,
         )
     return agents
 
@@ -191,7 +229,15 @@ def bind_project(agent: ProjectAgent, store, measurement_path, manual_version=''
         else:
             # The file name is a hint. It cannot establish ECU software identity.
             name = Path(measurement_path).name if measurement_path else ''
-            hints = {match.upper() for match in _FILENAME_VERSION.findall(name)}
+            pattern = re.compile(agent.version_pattern, re.I) if agent.version_pattern else _FILENAME_VERSION
+            hints = set()
+            for match in pattern.finditer(name):
+                token = match.group(1) if match.lastindex else match.group(0)
+                if not agent.version_pattern:
+                    token = token.upper()
+                elif token not in agent.releases and token.upper() in agent.releases:
+                    token = token.upper()
+                hints.add(token)
             if len(hints) > 1:
                 basis = 'conflicting'
             elif hints:
