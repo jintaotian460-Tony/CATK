@@ -1175,7 +1175,7 @@ def inspect_measurement(
     inspection = _Inspection(path)
     body: list[str] = [
         "ENVIRONMENT",
-        f"  Osvanta Bus Log Analyzer: {app_version or '(unknown)'}",
+        f"  CATK: {app_version or '(unknown)'}",
         (
             f"  OS: {platform.system()} {platform.release()} "
             f"{platform.machine()} | Python: {platform.python_version()}"

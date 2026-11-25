@@ -81,9 +81,9 @@ def _wait_for_calculation(window: MainWindow, qapp: QApplication) -> None:
     assert window._calc_thread is None
 
 
-def test_stacked_plot_is_enabled_by_default(window):
-    assert window.btn_stacked.isChecked()
-    assert window.plot_panel._stacked_mode
+def test_windows_plot_is_enabled_by_default(window):
+    assert window.btn_windows.isChecked()
+    assert window.plot_panel._windows_mode
 
     window.add_signals_to_plot([window.store.all_keys()[0]])
 
@@ -91,6 +91,7 @@ def test_stacked_plot_is_enabled_by_default(window):
 
 
 def test_data_point_toggle_thins_then_restores_curve(window):
+    window.btn_points.setChecked(False)
     key = window.store.all_keys()[0]
     window.add_signals_to_plot([key])
     window.plot_panel.table.clearSelection()
@@ -107,6 +108,7 @@ def test_data_point_toggle_thins_then_restores_curve(window):
 
 
 def test_hide_line_requires_data_points_and_restores_line(window):
+    window.btn_points.setChecked(False)
     key = window.store.all_keys()[0]
     window.add_signals_to_plot([key])
     plotted = window.plot_panel._items[key]

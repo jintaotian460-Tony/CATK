@@ -30,7 +30,7 @@ import sys, threading, time
 from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QThread, QTimer
 app = QCoreApplication([])
-app.setApplicationName("Osvanta Bus Log Analyzer")
+app.setApplicationName("CATK")
 app.setApplicationVersion("v00.00.99")
 from gui.crash_log import CrashLog
 crash_log = CrashLog(app, Path(sys.argv[1]), freeze_seconds=float(sys.argv[2]))
@@ -253,7 +253,7 @@ entry.main()
 
     assert completed.returncode == 0, completed.stderr[-4000:]
     session = _session(log.read_text(encoding="utf-8"))
-    assert re.match(r"\S+ \S+  Osvanta Bus Log Analyzer v\d", session)
+    assert re.match(r"\S+ \S+  CATK v\d", session)
     assert "memory checks on" not in session
     assert session.rstrip().endswith("Session ended normally.")
 
@@ -296,4 +296,4 @@ def test_an_oversized_log_is_rotated(tmp_path):
 
     assert path == log
     assert (tmp_path / "crash.log.1").stat().st_size == MAX_BYTES + 1
-    assert log.read_text(encoding="utf-8").startswith("Osvanta Bus Log Analyzer crash log.")
+    assert log.read_text(encoding="utf-8").startswith("CATK crash log.")

@@ -231,43 +231,45 @@ def test_plot_buttons_sit_above_the_plot_not_the_table(window):
     assert window.plot_button_row.parentWidget() is plot_side
     assert window.plot_panel.parentWidget() is plot_side
     assert window.plot_button_row.geometry().bottom() < window.plot_panel.geometry().top()
-    for button in (window.btn_fit, window.btn_stacked, window.btn_points):
+    for button in (window.btn_fit, window.btn_new_window, window.btn_points):
         assert button.parentWidget() is window.plot_button_row
 
 
 def test_plot_modes_come_first_then_a_gap_then_the_icon_buttons_then_clear_plot(window, qapp):
     # Wide enough for the whole row in the offscreen platform's fallback
     # font, which makes the text buttons wider than Segoe UI does.
-    window.resize(1600, 800)
+    window.resize(2100, 800)
     qapp.processEvents()
     row = window.plot_button_row
-    modes = [window.btn_multi_axis, window.btn_stacked, window.btn_multistack, window.btn_table]
+    modes = [window.btn_new_window, window.template_menu, window.btn_table]
     icons = [window.btn_fit, window.btn_fit_v, window.btn_zoom_rect, window.btn_cursor1,
-             window.btn_cursor2, window.btn_line_mode, window.btn_points, window.btn_hide_line]
+             window.btn_cursor2, window.btn_line_mode]
 
     clear = window.btn_clear_plot
 
-    assert row._buttons == modes + icons + [clear]
-    assert [b.text() for b in modes] == ['Multi-Axis', 'Stacked', 'MultiStack', 'Table']
-    assert [b.accessibleName() for b in icons + [clear]] == [
+    assert row._buttons == modes + icons + [window.btn_points, window.btn_hide_line, window.btn_line_width, clear]
+    assert [b.text() for b in modes] == ['＋窗口', '分析模板', 'Table']
+    assert [b.accessibleName() for b in icons + [window.btn_hide_line, clear]] == [
         'Fit to Window', 'Fit Vertical', 'Rectangle Zoom', 'Cursor 1', 'Cursor 2',
-        'Step Mode', 'Show Data Points', 'Hide Line', 'Clear Plot']
-    for button in icons + [clear]:
+        'Step Mode', 'Hide Line', 'Clear Plot']
+    for button in icons + [window.btn_hide_line, clear]:
         assert button.text() == ''
         assert not button.icon().isNull()
         assert button.toolTip().startswith(button.accessibleName())
-        assert button.height() == window.btn_stacked.height()
-    multistack, fit = window.btn_multistack, window.btn_fit
-    assert fit.x() - (multistack.x() + multistack.width()) > 2 * row.SPACING
+        assert button.height() == window.btn_new_window.height()
+    table, fit = window.btn_table, window.btn_fit
+    assert fit.x() - (table.x() + table.width()) > 2 * row.SPACING
     # Clear Plot, which empties the plot, stands apart from the view buttons.
-    hide_line = window.btn_hide_line
+    last_tool = window.btn_line_width
     assert not row.overflowed_buttons()
-    assert clear.x() - (hide_line.x() + hide_line.width()) > 2 * row.SPACING
+    assert clear.x() - (last_tool.x() + last_tool.width()) > 2 * row.SPACING
 
 
-def test_plot_buttons_are_level_with_the_table_header(window):
+def test_plot_buttons_are_level_with_the_table_header(window, qapp):
     from PySide6.QtCore import QPoint
 
+    window.btn_windows.setChecked(False)  # legacy renderer's table geometry
+    qapp.processEvents()
     splitter = window.center_splitter
     row = window.plot_button_row
     table = window.plot_panel.table
@@ -294,6 +296,8 @@ def test_the_table_ends_level_with_the_plot(qapp, window):
     from PySide6.QtCore import QPoint
     from core.signal_store import SignalSeries
 
+    window.btn_windows.setChecked(False)  # this table is hidden in product layout
+    qapp.processEvents()
     splitter = window.center_splitter
 
     def bottom(widget):
@@ -337,7 +341,7 @@ def test_only_the_cursor_line_lies_under_the_plot(qapp, window):
         return top_left.y() > plot.bottom() and plot.left() <= top_left.x() <= plot.right()
 
     assert [label for label in panel.findChildren(QLabel)
-            if label.isVisible() and under_plot(label)] == [panel.cursor_label]
+             if label.isVisible() and under_plot(label)] == [panel.cursor_label, panel.sampling_label]
 
 
 def test_plotting_the_first_signal_resizes_neither_plot_nor_table(qapp, window):
@@ -347,7 +351,6 @@ def test_plotting_the_first_signal_resizes_neither_plot_nor_table(qapp, window):
     from core.signal_store import SignalSeries
 
     panel = window.plot_panel
-    window.btn_stacked.setChecked(True)
     qapp.processEvents()
     plot, table = panel.view_stack.size(), panel.table.size()
     assert not panel.cursor_label.isVisible()
@@ -384,6 +387,8 @@ def test_the_cursor_readout_reads_a_point_larger_than_the_table(qapp, window):
 
 
 def test_narrow_plot_moves_buttons_into_the_menu_not_the_table_aside(qapp, window):
+    window.btn_windows.setChecked(False)  # legacy two-pane renderer only
+    qapp.processEvents()
     splitter = window.center_splitter
     total = sum(splitter.sizes())
 

@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """Record why the application died, in a file the user can send.
 
@@ -65,7 +66,7 @@ MAX_BYTES = 1_000_000
 MAX_DISTINCT_WARNINGS = 50
 
 _PREAMBLE = (
-    'Osvanta Bus Log Analyzer crash log.\n'
+    'CATK crash log.\n'
     'Each session starts with a ==== header. A session without a closing\n'
     '"Session ended normally." line crashed, froze or was killed.\n'
     '"Timeout (...)!" lists every thread while the window was frozen.\n'
@@ -75,11 +76,12 @@ _PREAMBLE = (
 def default_log_path() -> Path:
     """In the user's logs folder when packaged, next to app.py from source.
 
-    OSVANTA_CRASH_LOG names another file: tests that start the application
-    keep the developer's own log clean with it.
+    CATK_CRASH_LOG (or legacy OSVANTA_CRASH_LOG) names another file: tests
+    that start the application keep the developer's own log clean with it.
     """
-    if os.environ.get('OSVANTA_CRASH_LOG'):
-        return Path(os.environ['OSVANTA_CRASH_LOG'])
+    override = os.environ.get('CATK_CRASH_LOG') or os.environ.get('OSVANTA_CRASH_LOG')
+    if override:
+        return Path(override)
     return app_data.logs_folder() / LOG_NAME
 
 

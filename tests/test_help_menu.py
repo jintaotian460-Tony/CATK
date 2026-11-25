@@ -30,7 +30,7 @@ def opened(monkeypatch):
 
 @pytest.fixture()
 def menu(qapp):
-    help_menu = HelpMenu('Osvanta Bus Log Analyzer')
+    help_menu = HelpMenu('CATK')
     yield help_menu
     help_menu.deleteLater()
     qapp.processEvents()
@@ -41,7 +41,7 @@ def window(qapp, monkeypatch, tmp_path):
     from gui.main_window import MainWindow
 
     monkeypatch.setattr(MainWindow, '_settings_folder', staticmethod(lambda: tmp_path))
-    w = MainWindow('Osvanta Bus Log Analyzer', '00.00.99')
+    w = MainWindow('CATK', '00.00.99')
     yield w
     w.deleteLater()
     qapp.processEvents()
@@ -59,9 +59,8 @@ def test_the_menu_holds_the_guide_the_ways_to_reach_us_and_about(menu):
         'Ask a question or share an idea',
         'Report a problem or request a feature',
         'Open the log folder',
-        'Take the user survey',
         '---',
-        'About Osvanta Bus Log Analyzer',
+        'About CATK',
     ]
 
 
@@ -94,25 +93,23 @@ def test_the_log_folder_opens_where_the_running_log_is(menu, opened, monkeypatch
 def test_the_links_lead_to_pages_that_last():
     # A copy of the application keeps its links for as long as it is used:
     # the Discussions front page rather than one discussion, and the issue list.
-    assert GETTING_STARTED_URL == 'https://osvanta.github.io/bus-log-analyzer/getting-started/'
-    assert DISCUSSIONS_URL == 'https://github.com/osvanta/bus-log-analyzer/discussions'
-    assert ISSUES_URL == 'https://github.com/osvanta/bus-log-analyzer/issues'
+    assert GETTING_STARTED_URL == 'https://github.com/jintaotian460-Tony/CATK/blob/main/guide/getting-started.md'
+    assert DISCUSSIONS_URL == 'https://github.com/jintaotian460-Tony/CATK/discussions'
+    assert ISSUES_URL == 'https://github.com/jintaotian460-Tony/CATK/issues'
 
 
 def test_the_guide_publishes_the_page_the_menu_opens():
-    # mkdocs.yml builds guide/ into the site at GUIDE_URL; a page named
-    # getting-started.md is published at GUIDE_URL + 'getting-started/'.
     config = (REPO / 'mkdocs.yml').read_text(encoding='utf-8')
-    assert f'site_url: {GUIDE_URL}' in config
+    assert 'site_name: CATK' in config
+    assert 'repo_url: https://github.com/jintaotian460-Tony/CATK' in config
     assert 'docs_dir: guide' in config
     assert 'getting-started.md' in config
     assert (REPO / 'guide' / 'getting-started.md').is_file()
-    assert GETTING_STARTED_URL == GUIDE_URL + 'getting-started/'
+    assert GETTING_STARTED_URL == GUIDE_URL + 'getting-started.md'
 
 
 @pytest.mark.parametrize('action, signal', [
     ('shortcuts_action', 'shortcutsRequested'),
-    ('survey_action', 'surveyRequested'),
     ('about_action', 'aboutRequested'),
 ])
 def test_the_window_shows_the_rest(menu, opened, action, signal):
@@ -130,7 +127,7 @@ def test_the_links_say_where_they_lead(menu):
     assert 'web browser' in menu.guide_action.toolTip()
     assert 'GitHub Discussions' in menu.ask_action.toolTip()
     assert 'GitHub' in menu.report_action.toolTip()
-    assert 'minutes' in menu.survey_action.toolTip()
+    assert not hasattr(menu, 'survey_action')
 
 
 def test_help_is_the_top_rows_last_button_and_opens_at_a_click(window):
@@ -143,6 +140,7 @@ def test_help_is_the_top_rows_last_button_and_opens_at_a_click(window):
     assert toolbar.actions()[-1] is help_action
     assert button.text() == 'Help'
     assert button.popupMode() == QToolButton.ToolButtonPopupMode.InstantPopup
+    assert not hasattr(window, 'survey_prompt')
     # Shortcuts and About moved into the menu.
     texts = [action.text() for action in toolbar.actions()]
     assert 'Shortcuts' not in texts
@@ -168,7 +166,7 @@ def test_the_help_menu_shows_about(window, monkeypatch):
 
     window.help_menu.about_action.trigger()
 
-    assert shown == ['About Osvanta Bus Log Analyzer']
+    assert shown == ['About CATK']
 
 
 def test_f1_belongs_to_getting_started_and_works_with_the_menu_closed(window):

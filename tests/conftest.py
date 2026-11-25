@@ -58,14 +58,6 @@ def _no_diag_telemetry(monkeypatch):
     monkeypatch.setenv("OSVANTA_DIAG_TELEMETRY", "0")
 
 
-# Keep the survey request out of test runs: every window a test shows would
-# count as a start, in the user settings beside the source tree, and the
-# tenth would open a dialog. tests/test_survey_prompt.py turns it back on.
-@pytest.fixture(autouse=True)
-def _no_survey_request(monkeypatch):
-    monkeypatch.setenv("OSVANTA_SURVEY_PROMPT", "0")
-
-
 # Keep the last session out of test runs: every window a test closes with a
 # plot would ask whether to save it, and keep it beside the source tree.
 # tests/test_session_restore.py turns it back on.
@@ -445,6 +437,12 @@ def qapp():
         pytest.skip("No Qt platform plugin available — skipping GUI test")
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    # No test runs app.exec(). With quit-on-last-window on, closing a busy
+    # MainWindow (MainWindow.closeEvent calls QApplication.exit(0) behind
+    # that very guard) puts the session app into its quitting state, and
+    # every later nested loop — QMenu.exec above all — returns at once.
+    # Nothing in the suite relies on quitting when windows close.
+    app.setQuitOnLastWindowClosed(False)
     yield app
     # Do not quit() the app here — session-scoped, tests may still hold refs.
 

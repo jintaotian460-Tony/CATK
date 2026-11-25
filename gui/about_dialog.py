@@ -3,11 +3,12 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """
-About / licence dialog for Osvanta Bus Log Analyzer.
+About / licence dialog for CATK.
 
-This dialog is not decorative. Osvanta Bus Log Analyzer links against Qt (via PySide6),
+This dialog is not decorative. CATK links against Qt (via PySide6),
 python-can and asammdf, all of which are used under the LGPL. Section
 4(c) of the LGPL-3.0 requires that an application which displays copyright
 notices while running also shows the notice for the linked libraries, together
@@ -26,7 +27,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog,
@@ -52,13 +53,14 @@ _LICENCE_DIR = 'licenses'
 _ABOUT_HTML = """
 <h2>{name}</h2>
 <p><b>Version {version}</b></p>
-<p>Copyright &copy; 2025-2026 Dinakaran Ganesan</p>
+<p>Maintained fork of <i>Osvanta Bus Log Analyzer</i> (upstream Copyright &copy; 2025-2026 Dinakaran Ganesan);
+CATK additions Copyright &copy; 2026 Tony Tian.</p>
 <p>{name} is free and open source software, licensed under the
 <b>Mozilla Public License, Version 2.0</b>. You may use it freely, including
 inside commercial and proprietary work. If you distribute a modified version of
 a file that carries the MPL notice, the source of that file must be made
 available under the MPL.</p>
-<p>Releases up to and including v00.00.59 were published under the MIT License
+<p>Upstream releases up to and including v00.00.59 were published under the MIT License
 and remain available under those terms.</p>
 <p>This program is distributed in the hope that it will be useful, but
 <b>without any warranty</b>; without even the implied warranty of
@@ -110,10 +112,6 @@ def _read_text(path: Path) -> str:
 class AboutDialog(QDialog):
     """Application details plus the third-party licence texts."""
 
-    # The user clicked the link to the user survey, which the main window
-    # opens. The dialog opens the project's other pages itself.
-    surveyRequested = Signal()
-
     def __init__(self, app_name: str, version: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(f'About {app_name}')
@@ -127,19 +125,16 @@ class AboutDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         close_btn.setDefault(True)
 
-        # The ways to reach the project, as in the Help menu. The survey link
-        # stays however its request was answered: see gui.survey_prompt.
+        # The ways to reach the project, as in the Help menu.
         self.ask_link = self._link(help_menu.ASK_TEXT, help_menu.ASK_TIP)
         self.ask_link.linkActivated.connect(
             lambda _link: help_menu.open_page(help_menu.DISCUSSIONS_URL))
         self.report_link = self._link(help_menu.REPORT_TEXT, help_menu.REPORT_TIP)
         self.report_link.linkActivated.connect(
             lambda _link: help_menu.open_page(help_menu.ISSUES_URL))
-        self.survey_link = self._link(help_menu.SURVEY_TEXT, help_menu.SURVEY_TIP)
-        self.survey_link.linkActivated.connect(lambda _link: self.surveyRequested.emit())
 
         button_row = QHBoxLayout()
-        for link in (self.ask_link, self.report_link, self.survey_link):
+        for link in (self.ask_link, self.report_link):
             if link is not self.ask_link:
                 button_row.addWidget(QLabel('·', self))
             button_row.addWidget(link)

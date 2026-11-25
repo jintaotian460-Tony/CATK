@@ -332,8 +332,9 @@ def window(qapp, monkeypatch, tmp_path):
 def test_tools_convert_opens_with_the_open_measurement(window, tmp_path):
     src = _mdf(tmp_path / 'open.mf4')
     window.measurement_path = str(src)
-    (action,) = window.tools_menu.actions()
-    assert action.text() == 'Convert files'
+    # The Tools menu also carries the bottom-panel toggle; pick by name.
+    action = next(action for action in window.tools_menu.actions()
+                  if action.text() == 'Convert files')
     action.trigger()
     dialog = window._converter_dialog
     assert dialog.isVisible() and dialog.inputs() == [src]

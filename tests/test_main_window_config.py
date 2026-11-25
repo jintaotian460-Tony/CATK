@@ -65,27 +65,84 @@ def test_plot_toolbar_does_not_show_remove_selected_button(window):
     assert 'Remove Selected' not in button_labels
 
 
-def test_plot_toolbar_has_multistack_next_to_stacked(window):
-    layout = window.btn_stacked.parentWidget().layout()
-    stacked_index = layout.indexOf(window.btn_stacked)
+def test_plot_toolbar_has_multi_window_only_and_no_layout_selector(window):
+    from PySide6.QtWidgets import QPushButton
+    import pytest
 
-    assert window.btn_multistack.text() == 'MultiStack'
-    assert layout.indexOf(window.btn_multistack) == stacked_index + 1
+    legacy = (window.btn_multi_axis, window.btn_stacked,
+              window.btn_multistack, window.btn_windows)
+
+    assert not hasattr(window, 'plot_layout_menu')
+    assert window.plot_button_row._buttons[0] is window.btn_new_window
+    assert all(button.parentWidget() is window for button in legacy)
+    assert all(not button.isVisibleTo(window) for button in legacy)
+    assert all(not button.isEnabled() for button in legacy[:-1])
+    assert window.btn_windows.isChecked()
+    assert window.plot_panel._windows_mode
+    assert window.btn_new_window.isEnabled()
+
+    window._set_plot_layout('windows')
+    assert window.plot_panel._windows_mode
+    with pytest.raises(ValueError):
+        window._set_plot_layout('normal')
 
 
-def test_multistack_plot_mode_is_mutually_exclusive(window):
-    window.btn_multistack.setChecked(True)
+def test_old_layout_handoffs_normalize_to_windows(window):
+    window._pending_plot_type = 'stacked'
+    window._apply_pending_plot_type()
 
-    assert window.btn_multistack.isChecked()
-    assert not window.btn_stacked.isChecked()
-    assert not window.btn_multi_axis.isChecked()
-    assert window.plot_panel._multistack_mode
+    assert window.btn_windows.isChecked()
+    assert window.plot_panel._windows_mode
+    assert window._configuration_dict()['windows'] is True
+    assert window._configuration_dict()['stacked'] is False
 
-    window.btn_stacked.setChecked(True)
 
-    assert window.btn_stacked.isChecked()
-    assert not window.btn_multistack.isChecked()
-    assert not window.plot_panel._multistack_mode
+def test_default_windows_layout_hides_global_list_and_reclaims_its_width(window, qapp):
+    import numpy as np
+    from core.signal_store import SignalStore
+
+    window.resize(1400, 900)
+    window.show()
+    qapp.processEvents()
+    panel = window.plot_panel
+    assert panel.table_panel.isHidden()
+    assert window.center_splitter.sizes()[0] == 0
+    assert window.center_splitter.widget(1).geometry().left() == 0
+
+    store = SignalStore()
+    store.add_series_bulk(channel=1, message_name='Demo', message_id=1,
+                          signal_name='Temperature', unit='degC',
+                          timestamps=np.array([0., 1.]), values=np.array([10., 15.]),
+                          raw_values=[], has_labels=False)
+    window._on_worker_finished(store)
+    key = store.all_keys()[0]
+    window.add_signal_to_plot(key)
+    panel.new_window()
+    window.btn_cursor1.setChecked(True)
+    panel.move_cursor1(1.)
+    qapp.processEvents()
+
+    assert panel.table_panel.isHidden()
+    assert window.center_splitter.sizes()[0] == 0
+    assert panel.table.rowCount() == 1  # retained only as the cursor/style data source
+    row = panel.table.item(panel._row_lookup[key], 2)
+    local = panel._window_widgets[0][1].rows[key]
+    assert row.text() == local.text(1) == '15.000'
+    assert panel._window_widgets[1][1].topLevelItemCount() == 0
+    window.btn_table.setChecked(True)
+    qapp.processEvents()
+    assert panel.tabular.isVisibleTo(window)
+    assert panel.table_panel.isHidden()
+
+
+@pytest.mark.parametrize('config', [{'windows': True}, {'stacked': True}, {'multi_axis': True}])
+def test_configuration_restore_does_not_reveal_global_list(window, qapp, tmp_path, config):
+    window.show()
+    window._apply_configuration(config, str(tmp_path / 'layout.json'))
+    qapp.processEvents()
+    assert window.plot_panel.table_panel.isHidden()
+    assert window.center_splitter.sizes()[0] == 0
+    assert window.plot_panel._windows_mode
 
 
 def test_partial_measurement_load_warns_but_keeps_finished_store(window):

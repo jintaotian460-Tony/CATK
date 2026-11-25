@@ -3,26 +3,11 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """
 The top row's Help menu: the user guide, the keyboard shortcuts, the ways to
 reach the project, and About.
-
-The user guide is a website built from guide/ in the repository and
-published on GitHub Pages. Its Getting started page opens from the menu and
-with F1.
-
-The project is reached on GitHub: questions and ideas in its Discussions,
-problems and feature requests in its issues. A copy of the application keeps
-its links for as long as it is used, so they lead to pages that last: the
-guide's Getting started page, which mkdocs.yml says never to move, the
-Discussions front page rather than any one discussion, and the issue list.
-
-The About dialog has the Discussions and issue links. The pages open in the
-web browser, and only when the user picks one.
-
-The logs a problem report needs are in the user's own folder, which Explorer
-hides (gui/app_data.py), so the menu opens it.
 """
 from __future__ import annotations
 
@@ -32,21 +17,20 @@ from PySide6.QtWidgets import QMenu, QWidget
 
 from gui import app_data, app_log
 
-GUIDE_URL = 'https://osvanta.github.io/bus-log-analyzer/'
-GETTING_STARTED_URL = GUIDE_URL + 'getting-started/'
-DISCUSSIONS_URL = 'https://github.com/osvanta/bus-log-analyzer/discussions'
-ISSUES_URL = 'https://github.com/osvanta/bus-log-analyzer/issues'
+REPO_URL = 'https://github.com/jintaotian460-Tony/CATK'
+GUIDE_URL = REPO_URL + '/blob/main/guide/'
+GETTING_STARTED_URL = GUIDE_URL + 'getting-started.md'
+DISCUSSIONS_URL = REPO_URL + '/discussions'
+ISSUES_URL = REPO_URL + '/issues'
 
 GUIDE_TEXT = 'Getting started'
 GUIDE_TIP = 'The user guide, in your web browser (F1)'
 ASK_TEXT = 'Ask a question or share an idea'
 ASK_TIP = 'How-to questions, ideas and anything else about the tool, on GitHub Discussions'
 REPORT_TEXT = 'Report a problem or request a feature'
-REPORT_TIP = 'Problems and feature requests, on GitHub. We read every one.'
+REPORT_TIP = 'Problems and feature requests, on GitHub.'
 LOGS_TEXT = 'Open the log folder'
 LOGS_TIP = 'The two logs to attach to a problem report, in File Explorer'
-SURVEY_TEXT = 'Take the user survey'
-SURVEY_TIP = '3–4 minutes, in your web browser'
 
 
 def open_page(url: str) -> None:
@@ -65,9 +49,6 @@ class HelpMenu(QMenu):
     """Opens the project's pages itself; the window shows the rest."""
 
     shortcutsRequested = Signal()
-    # The main window opens the survey, which records that it was taken: see
-    # gui.survey_prompt.
-    surveyRequested = Signal()
     aboutRequested = Signal()
 
     def __init__(self, app_name: str, parent: QWidget | None = None) -> None:
@@ -82,7 +63,6 @@ class HelpMenu(QMenu):
         self.ask_action = self._add(ASK_TEXT, lambda: open_page(DISCUSSIONS_URL), ASK_TIP)
         self.report_action = self._add(REPORT_TEXT, lambda: open_page(ISSUES_URL), REPORT_TIP)
         self.logs_action = self._add(LOGS_TEXT, open_log_folder, LOGS_TIP)
-        self.survey_action = self._add(SURVEY_TEXT, self.surveyRequested.emit, SURVEY_TIP)
         self.addSeparator()
         self.about_action = self._add(f'About {app_name}', self.aboutRequested.emit)
 

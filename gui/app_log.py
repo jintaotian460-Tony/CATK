@@ -3,6 +3,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
 # Copyright (c) 2025-2026 Dinakaran Ganesan
+# Copyright (c) 2026 Tony Tian (CATK)
 
 """A silent record of what the application said, in a file the user can send.
 
@@ -42,7 +43,7 @@ MAX_BYTES = 1_000_000
 MAX_SESSION_BYTES = 5_000_000
 
 _PREAMBLE = (
-    'Osvanta Bus Log Analyzer app log.\n'
+    'CATK app log.\n'
     "The Log panel's lines and, where the application has no console, what a\n"
     'console would have shown. Each session starts with a ==== header.\n'
     'Why the application ended is recorded in BLA_crash.log.\n'
@@ -54,11 +55,12 @@ _running: AppLog | None = None
 def default_log_path() -> Path:
     """In the user's logs folder when packaged, next to app.py from source.
 
-    OSVANTA_APP_LOG names another file: tests that start the application
-    keep the developer's own log clean with it.
+    CATK_APP_LOG (or legacy OSVANTA_APP_LOG) names another file: tests that
+    start the application keep the developer's own log clean with it.
     """
-    if os.environ.get('OSVANTA_APP_LOG'):
-        return Path(os.environ['OSVANTA_APP_LOG'])
+    override = os.environ.get('CATK_APP_LOG') or os.environ.get('OSVANTA_APP_LOG')
+    if override:
+        return Path(override)
     return app_data.logs_folder() / LOG_NAME
 
 
