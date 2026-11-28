@@ -91,6 +91,16 @@ from gui.calculated_signal_dialog import CalculatedSignalDialog, CalculationWork
 from gui.raw_frame_dialog import RawFrameDialog
 from gui.load_debug_window import LoadDebugWindow, LoadDebugWorker
 from gui.top_row import FileMenu, MainStepButton, ToolsMenu
+from gui.ui_style import (
+    BOTTOM_TABS_QSS,
+    DOCK_TITLE_QSS,
+    LOG_EXPLORER_QSS,
+    MAIN_WINDOW_QSS,
+    PLAYBACK_BAR_QSS,
+    PLOT_TOOLBAR_QSS,
+    SIGNAL_TREE_QSS,
+    TITLE_BAR_QSS,
+)
 from gui.window_frame import CaptionlessWindow, TitleRow, captionless_frame_supported
 from core.debug_inspector import (
     format_runtime_failure,
@@ -380,15 +390,16 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         from gui.log_explorer import LogExplorer
-        from gui.observation_style import CONTROLS
         self.log_explorer = LogExplorer()
+        self.log_explorer.setStyleSheet(LOG_EXPLORER_QSS)
         self.log_explorer.fileActivated.connect(lambda path: self.open_measurement_path(path, auto_decode=True))
         self.log_explorer.operationCompleted.connect(self._log)
         self.log_explorer.rootChanged.connect(self._log_root_changed)
         self.signal_tree = SignalTreeWidget()
+        self.signal_tree.setStyleSheet(SIGNAL_TREE_QSS)
         self.plot_panel = PlotPanel()
         self.playback = PlaybackBar(self, transport_controls=False)
-        self.playback.setStyleSheet(CONTROLS)
+        self.playback.setStyleSheet(PLAYBACK_BAR_QSS)
         self.playback.positionChanged.connect(self._playback_position)
         self.playback.gapTimeoutChanged.connect(self._playback_gap_changed)
         self.plot_panel.cursor1Moved.connect(self._playback_cursor_moved)
@@ -423,7 +434,9 @@ class MainWindow(QMainWindow):
         self.plot_panel.eventsToggled.connect(self._toggle_measurement_events)
 
         self.plot_button_row = OverflowButtonRow()
-        self.plot_button_row.setStyleSheet(CONTROLS)
+        self.plot_button_row.setObjectName('plotButtonRow')
+        self.plot_button_row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.plot_button_row.setStyleSheet(PLOT_TOOLBAR_QSS)
         self.btn_fit = icon_button('fit_window', 'Fit to Window', 'Fit to Window (F)')
         self.btn_fit_v = icon_button('fit_vertical', 'Fit Vertical',
                                      'Fit Vertical (V): fit the height, keep the time range')
@@ -598,6 +611,8 @@ class MainWindow(QMainWindow):
         self.signal_dock.visibilityChanged.connect(self._remember_signal_window_visibility)
 
         self.bottom_tabs = QTabWidget()
+        self.bottom_tabs.setObjectName('bottomTabs')
+        self.bottom_tabs.setStyleSheet(BOTTOM_TABS_QSS)
         self.bottom_tabs.addTab(self.log_box, 'Log')
         self.bottom_tabs.addTab(self.diagnostics_box, 'Diagnostics')
         self.bottom_tabs.addTab(self.measurement_box, 'Measurement')
@@ -640,27 +655,20 @@ class MainWindow(QMainWindow):
         # First show of a session starts from what is on screen right now.
         self.assistant_dock.visibilityChanged.connect(self._assistant_first_show)
 
-        left_title = QWidget()
-        left_title_layout = QHBoxLayout(left_title)
-        left_title_layout.setContentsMargins(4, 2, 4, 2)
-        left_title_layout.addWidget(QLabel('Log Explorer'))
-        left_title_layout.addStretch(1)
-        self.left_toggle_btn = QToolButton()
-        self.left_toggle_btn.setText('◀')
-        self.left_toggle_btn.clicked.connect(self._toggle_left_panel)
-        left_title_layout.addWidget(self.left_toggle_btn)
+        left_title, self.left_toggle_btn = self._make_dock_title(
+            'Log Explorer', '◀', self._toggle_left_panel)
         self.left_dock.setTitleBarWidget(left_title)
 
-        bottom_title = QWidget()
-        bottom_title_layout = QHBoxLayout(bottom_title)
-        bottom_title_layout.setContentsMargins(4, 2, 4, 2)
-        bottom_title_layout.addWidget(QLabel('Log / Diagnostics / Measurement'))
-        bottom_title_layout.addStretch(1)
-        self.bottom_toggle_btn = QToolButton()
-        self.bottom_toggle_btn.setText('▼')
-        self.bottom_toggle_btn.clicked.connect(self._toggle_bottom_panel)
-        bottom_title_layout.addWidget(self.bottom_toggle_btn)
+        bottom_title, self.bottom_toggle_btn = self._make_dock_title(
+            'Log / Diagnostics / Measurement', '▼', self._toggle_bottom_panel)
         self.bottom_dock.setTitleBarWidget(bottom_title)
+
+        assistant_title, self.assistant_close_btn = self._make_dock_title(
+            '分析助手', '✕', self.assistant_dock.hide)
+        self.assistant_dock.setTitleBarWidget(assistant_title)
+
+        self.resizeDocks([self.left_dock, self.assistant_dock],
+                         [224, 380], Qt.Orientation.Horizontal)
 
         self.left_dock.visibilityChanged.connect(self._sync_panel_toggle_buttons)
         self.bottom_dock.visibilityChanged.connect(self._sync_panel_toggle_buttons)
@@ -668,8 +676,7 @@ class MainWindow(QMainWindow):
         # One painted pixel, with a transparent mouse target across the boundary.
         # Native dock separators have the same visual thickness; no blank gutter
         # is reserved for either of the two handles.
-        self.setStyleSheet('QMainWindow::separator { width: 1px; height: 1px; '
-                           'background: palette(mid); }')
+        self.setStyleSheet(MAIN_WINDOW_QSS)
         self._panel_resize = {}
         self.left_edge_btn = EdgeTab(Qt.Orientation.Vertical, self)
         self.left_edge_btn.doubleClicked.connect(self._toggle_left_panel)
@@ -692,7 +699,7 @@ class MainWindow(QMainWindow):
         self.status_next_step_label = QLabel('Next: Open Measurement, then Databases, then Decode')
         self.debug_mode_label = QLabel('DEBUG MODE: ON')
         self.debug_mode_label.setStyleSheet(
-            'color: #ff6060; font-weight: bold; padding-right: 10px;'
+            'color: #dc2626; font-weight: bold; padding-right: 10px;'
         )
         self.debug_mode_label.hide()
         self.statusBar().addWidget(self.status_state_label)
@@ -702,6 +709,7 @@ class MainWindow(QMainWindow):
         # than the user made it, which moved the plot under the mouse.
         for label in (self.status_state_label, self.status_next_step_label):
             label.setMinimumWidth(1)
+            label.setStyleSheet('color: #475569; padding: 0 6px;')
         # The brand at the right end: the top row shows no name since it took
         # the title bar's place. See gui.brand_logo.
         self.brand_logo = BrandLogo(BRAND_LOGO_HEIGHT)
@@ -709,6 +717,22 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.brand_logo)
         leave_logo_unframed(self.statusBar())
         self._sync_panel_toggle_buttons()
+
+    @staticmethod
+    def _make_dock_title(title: str, button_text: str, slot) -> tuple[QWidget, QToolButton]:
+        bar = QWidget()
+        bar.setObjectName('dockTitleBar')
+        bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        bar.setStyleSheet(DOCK_TITLE_QSS)
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(8, 4, 6, 4)
+        layout.addWidget(QLabel(title))
+        layout.addStretch(1)
+        btn = QToolButton()
+        btn.setText(button_text)
+        btn.clicked.connect(slot)
+        layout.addWidget(btn)
+        return bar, btn
 
     def _level_plot_buttons_with_table_header(self) -> None:
         """Give the plot buttons and the signal table's header one height,
@@ -732,6 +756,9 @@ class MainWindow(QMainWindow):
         # The toolbar's row is the top of the window, in place of a title bar.
         # It reads in the order of the work: see gui.top_row.
         self.title_row = TitleRow(toolbar)
+        self.title_row.setObjectName('titleRow')
+        self.title_row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.title_row.setStyleSheet(TITLE_BAR_QSS)
         self.setMenuWidget(self.title_row)
         self._window_frame = CaptionlessWindow(self, self.title_row)
         # The row's actions by their text, those in its File menu included.

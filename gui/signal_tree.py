@@ -74,6 +74,8 @@ class SignalTreeWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setObjectName('SignalTreePanel')
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._payload: dict[int | None, dict[str, list[str]]] = {}
         self._generated_signals: list[tuple[str, str, str]] = []
         self._unavailable_signals = {}
@@ -81,6 +83,7 @@ class SignalTreeWidget(QWidget):
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search signals... (* and ? wildcards)")
+        self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setToolTip(
             "Finds the text anywhere in a signal name.\n"
             "* stands for any text, ? for one character:\n"
@@ -132,7 +135,8 @@ class SignalTreeWidget(QWidget):
         self.tree_header.setFixedHeight(self.tree_header.sizeHint().height())
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(3, 3, 3, 3)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(5)
         layout.addWidget(self.search_edit)
         layout.addWidget(self.tree_header)
 

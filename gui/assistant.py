@@ -23,6 +23,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -30,6 +31,8 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSplitter,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -47,6 +50,7 @@ from core.project_agent import (
 )
 from core.rpc_transport import BridgeError, Cancelled
 from core.shared_capture import CaptureLease
+from gui.ui_style import ASSISTANT_PANEL_QSS
 
 #: How the statistics range names itself, mapped to the panel's language.
 _RANGE_LABELS = {
@@ -173,6 +177,9 @@ class AssistantPanel(QWidget):
                  legacy_home: Path | None = None) -> None:
         super().__init__(parent)
         self.setObjectName('AssistantPanel')
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(ASSISTANT_PANEL_QSS)
+        self.setMinimumWidth(330)
         self._context: AnalysisContext | None = None
         self._running = False
         self._cancelled = False
@@ -185,41 +192,96 @@ class AssistantPanel(QWidget):
         self._ref_error = ''
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(10, 10, 10, 8)
+        layout.setSpacing(8)
 
-        layout.addWidget(QLabel('本次分析上下文'))
-        self.context_label = QLabel('（尚未捕获）')
-        self.context_label.setWordWrap(True)
-        layout.addWidget(self.context_label)
+        # ── Context card ───────────────────────────────────────────────────
+        context_card = QFrame()
+        context_card.setObjectName('contextCard')
+        ctx_layout = QVBoxLayout(context_card)
+        ctx_layout.setContentsMargins(10, 8, 10, 8)
+        ctx_layout.setSpacing(5)
 
-        buttons = QHBoxLayout()
+        ctx_head = QHBoxLayout()
+        ctx_head.setContentsMargins(0, 0, 0, 0)
+        ctx_title = QLabel('本次分析上下文')
+        ctx_title.setObjectName('sectionTitle')
+        ctx_head.addWidget(ctx_title)
+        ctx_head.addStretch(1)
         self.capture_btn = QPushButton('捕获当前上下文')
         self.capture_btn.setToolTip('把当前选中的信号与时间范围（双光标之间，'
                                     '否则可见范围）固定为本次分析的上下文')
         self.capture_btn.clicked.connect(self.recaptureRequested.emit)
+        ctx_head.addWidget(self.capture_btn)
+        ctx_layout.addLayout(ctx_head)
+
+        self.context_label = QLabel('（尚未捕获）')
+        self.context_label.setObjectName('mutedCaption')
+        self.context_label.setWordWrap(True)
+        ctx_layout.addWidget(self.context_label)
+
+        self.status_label = QLabel('空闲')
+        self.status_label.setObjectName('statusPill')
+        self.status_label.setWordWrap(True)
+        ctx_layout.addWidget(self.status_label)
+        layout.addWidget(context_card)
+
+        # ── Tabbed workspace (Local vs. Codex) ─────────────────────────────
+        self.mode_tabs = QTabWidget()
+        self.mode_tabs.setObjectName('assistantTabs')
+        layout.addWidget(self.mode_tabs, stretch=1)
+
+        local_tab = QWidget()
+        local_layout = QVBoxLayout(local_tab)
+        local_layout.setContentsMargins(8, 8, 8, 8)
+        local_layout.setSpacing(6)
+
+        local_actions = QHBoxLayout()
+        local_actions.setContentsMargins(0, 0, 0, 0)
+        local_actions.setSpacing(6)
         self.run_btn = QPushButton('开始分析')
+        self.run_btn.setObjectName('primaryBtn')
         self.run_btn.setToolTip('对上下文里的信号做本地只读分析')
         self.run_btn.clicked.connect(self._on_run_clicked)
         self.stop_btn = QPushButton('停止')
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_analysis)
-        buttons.addWidget(self.capture_btn)
-        buttons.addWidget(self.run_btn)
-        buttons.addWidget(self.stop_btn)
-        layout.addLayout(buttons)
+        local_actions.addWidget(self.run_btn)
+        local_actions.addWidget(self.stop_btn)
+        local_actions.addStretch(1)
+        local_layout.addLayout(local_actions)
 
-        self.status_label = QLabel('空闲')
-        layout.addWidget(self.status_label)
+        local_split = QSplitter(Qt.Orientation.Vertical)
+        local_split.setChildrenCollapsible(False)
 
-        layout.addWidget(QLabel('分析结果'))
+        findings_pane = QWidget()
+        findings_layout = QVBoxLayout(findings_pane)
+        findings_layout.setContentsMargins(0, 2, 0, 2)
+        findings_layout.setSpacing(4)
+        res_title = QLabel('分析结果')
+        res_title.setObjectName('sectionTitle')
+        findings_layout.addWidget(res_title)
         self.findings_box = QTextEdit()
         self.findings_box.setReadOnly(True)
-        layout.addWidget(self.findings_box, stretch=2)
+        self.findings_box.setPlaceholderText('点击「开始分析」对当前信号做本地只读分析。')
+        findings_layout.addWidget(self.findings_box, stretch=1)
+        local_split.addWidget(findings_pane)
 
-        layout.addWidget(QLabel('证据（双击定位到波形）'))
+        evidence_pane = QWidget()
+        evidence_layout = QVBoxLayout(evidence_pane)
+        evidence_layout.setContentsMargins(0, 4, 0, 0)
+        evidence_layout.setSpacing(4)
+        ev_title = QLabel('证据（双击定位到波形）')
+        ev_title.setObjectName('sectionTitle')
+        evidence_layout.addWidget(ev_title)
         self.evidence_list = QListWidget()
         self.evidence_list.itemActivated.connect(self._evidence_activated)
-        layout.addWidget(self.evidence_list, stretch=1)
+        evidence_layout.addWidget(self.evidence_list, stretch=1)
+        local_split.addWidget(evidence_pane)
+        local_split.setStretchFactor(0, 3)
+        local_split.setStretchFactor(1, 2)
+        local_layout.addWidget(local_split, stretch=1)
+        self.mode_tabs.addTab(local_tab, '本地分析')
 
         self._desktop = (
             DesktopChats(
@@ -242,7 +304,21 @@ class AssistantPanel(QWidget):
                 self._project_id = self._project_file.read_text(encoding='utf-8').strip()
             except (OSError, UnicodeError):
                 self._project_id = ''
+
+            codex_tab = QWidget()
+            codex_layout = QVBoxLayout(codex_tab)
+            codex_layout.setContentsMargins(8, 8, 8, 8)
+            codex_layout.setSpacing(6)
+
+            ref_card = QFrame()
+            ref_card.setObjectName('refCard')
+            ref_card_layout = QVBoxLayout(ref_card)
+            ref_card_layout.setContentsMargins(8, 7, 8, 7)
+            ref_card_layout.setSpacing(5)
+
             projects = QHBoxLayout()
+            projects.setContentsMargins(0, 0, 0, 0)
+            projects.setSpacing(6)
             projects.addWidget(QLabel('Codex 项目'))
             self.codex_project_combo = QComboBox()
             self.codex_project_combo.setAccessibleName('Codex 项目')
@@ -252,9 +328,11 @@ class AssistantPanel(QWidget):
             self.refresh_projects_btn = QPushButton('刷新项目')
             self.refresh_projects_btn.clicked.connect(self.refresh_codex_projects)
             projects.addWidget(self.refresh_projects_btn)
-            layout.addLayout(projects)
+            ref_card_layout.addLayout(projects)
 
             refs = QHBoxLayout()
+            refs.setContentsMargins(0, 0, 0, 0)
+            refs.setSpacing(6)
             refs.addWidget(QLabel('参考资料'))
             self.ref_project_combo = QComboBox()
             self.ref_project_combo.setAccessibleName('项目参考资料')
@@ -267,30 +345,40 @@ class AssistantPanel(QWidget):
             self.ref_version_combo.setEnabled(False)
             self.ref_version_combo.currentIndexChanged.connect(self._on_ref_version_changed)
             refs.addWidget(self.ref_version_combo)
+            ref_card_layout.addLayout(refs)
+
+            ref_footer = QHBoxLayout()
+            ref_footer.setContentsMargins(0, 0, 0, 0)
+            ref_footer.setSpacing(6)
+            self.ref_status_label = QLabel('未绑定项目参考资料')
+            self.ref_status_label.setObjectName('mutedCaption')
+            self.ref_status_label.setWordWrap(True)
+            ref_footer.addWidget(self.ref_status_label, stretch=1)
             self.ref_reload_btn = QPushButton('刷新')
             self.ref_reload_btn.clicked.connect(self.reload_reference_catalog)
-            refs.addWidget(self.ref_reload_btn)
+            ref_footer.addWidget(self.ref_reload_btn)
             self.ref_config_btn = QPushButton('配置…')
             self.ref_config_btn.setToolTip('打开项目参考资料目录与 assistant-project-agents.json')
             self.ref_config_btn.clicked.connect(self._open_reference_config)
-            refs.addWidget(self.ref_config_btn)
-            layout.addLayout(refs)
-
-            self.ref_status_label = QLabel('未绑定项目参考资料')
-            self.ref_status_label.setWordWrap(True)
-            layout.addWidget(self.ref_status_label)
+            ref_footer.addWidget(self.ref_config_btn)
+            ref_card_layout.addLayout(ref_footer)
+            codex_layout.addWidget(ref_card)
 
             self.question_input = QPlainTextEdit()
             self.question_input.setPlaceholderText('例如：目标变了，执行器为什么没跟上？')
-            self.question_input.setFixedHeight(52)
-            layout.addWidget(self.question_input)
+            self.question_input.setFixedHeight(60)
+            codex_layout.addWidget(self.question_input)
 
             share_buttons = QHBoxLayout()
+            share_buttons.setContentsMargins(0, 0, 0, 0)
+            share_buttons.setSpacing(6)
             self.share_btn = QPushButton('在 Codex 中分析')
+            self.share_btn.setObjectName('primaryBtn')
             self.share_btn.clicked.connect(self._on_share_clicked)
             self.read_chat_btn = QPushButton('刷新聊天')
             self.read_chat_btn.clicked.connect(self._read_shared_chat)
             self.revoke_btn = QPushButton('撤销取数')
+            self.revoke_btn.setObjectName('dangerBtn')
             self.revoke_btn.clicked.connect(self._revoke_clicked)
             self.cancel_codex_btn = QPushButton('取消')
             self.cancel_codex_btn.clicked.connect(self._cancel_desktop)
@@ -298,16 +386,48 @@ class AssistantPanel(QWidget):
             setup_btn.setToolTip('复制注册 CATK 捕获工具的 PowerShell 命令')
             setup_btn.clicked.connect(self._copy_share_setup)
             for button in (self.share_btn, self.read_chat_btn, self.revoke_btn,
-                           self.cancel_codex_btn, setup_btn):
+                           self.cancel_codex_btn):
                 share_buttons.addWidget(button)
-            layout.addLayout(share_buttons)
-            layout.addWidget(QLabel('Codex 证据（双击定位波形或查看资料）'))
+            share_buttons.addStretch(1)
+            share_buttons.addWidget(setup_btn)
+            codex_layout.addLayout(share_buttons)
+
+            codex_split = QSplitter(Qt.Orientation.Vertical)
+            codex_split.setChildrenCollapsible(False)
+
+            reply_pane = QWidget()
+            reply_layout = QVBoxLayout(reply_pane)
+            reply_layout.setContentsMargins(0, 2, 0, 2)
+            reply_layout.setSpacing(4)
+            reply_title = QLabel('Codex 回复')
+            reply_title.setObjectName('sectionTitle')
+            reply_layout.addWidget(reply_title)
+            self.codex_reply_box = QTextEdit()
+            self.codex_reply_box.setReadOnly(True)
+            self.codex_reply_box.setPlaceholderText('在 Codex 中发起分析后，回复会同步显示在此处。')
+            reply_layout.addWidget(self.codex_reply_box, stretch=1)
+            codex_split.addWidget(reply_pane)
+
+            cev_pane = QWidget()
+            cev_layout = QVBoxLayout(cev_pane)
+            cev_layout.setContentsMargins(0, 4, 0, 0)
+            cev_layout.setSpacing(4)
+            cev_title = QLabel('Codex 证据（双击定位波形或查看资料）')
+            cev_title.setObjectName('sectionTitle')
+            cev_layout.addWidget(cev_title)
             self.codex_evidence_list = QListWidget()
             self.codex_evidence_list.itemActivated.connect(self._evidence_activated)
-            layout.addWidget(self.codex_evidence_list, stretch=1)
+            cev_layout.addWidget(self.codex_evidence_list, stretch=1)
+            codex_split.addWidget(cev_pane)
+            codex_split.setStretchFactor(0, 3)
+            codex_split.setStretchFactor(1, 2)
+            codex_layout.addWidget(codex_split, stretch=1)
+
+            self.mode_tabs.addTab(codex_tab, 'Codex 协同')
             self.reload_reference_catalog()
 
         self.privacy_label = QLabel(self.PRIVACY_NOTE)
+        self.privacy_label.setObjectName('mutedCaption')
         self.privacy_label.setWordWrap(True)
         layout.addWidget(self.privacy_label)
         self._update_desktop_buttons()
@@ -341,6 +461,8 @@ class AssistantPanel(QWidget):
         self._show_project_path()
         if self._shared_chat_id:
             self.findings_box.clear()
+            if self._desktop is not None:
+                self.codex_reply_box.clear()
         self.revoke_shared()
         try:
             self._project_file.parent.mkdir(parents=True, exist_ok=True)
@@ -748,9 +870,13 @@ class AssistantPanel(QWidget):
         if request.thread_id:
             transcript, ids = answer
             evidence = self._shared_lease.evidence(ids) if self._shared_lease else ()
-            self.findings_box.setPlainText(
+            reply_text = (
                 f'【从 CATK 发起】\n{self._shared_question}\n\n'
-                + (transcript or '（聊天暂无回复）'))
+                + (transcript or '（聊天暂无回复）')
+            )
+            self.findings_box.setPlainText(reply_text)
+            if self._desktop is not None:
+                self.codex_reply_box.setPlainText(reply_text)
             self.codex_evidence_list.clear()
             for ev in evidence:
                 if isinstance(ev, Evidence):
@@ -799,6 +925,8 @@ class AssistantPanel(QWidget):
         self.context_label.setToolTip('')
         self.evidence_list.clear()
         self.findings_box.clear()
+        if self._desktop is not None:
+            self.codex_reply_box.clear()
         self.revoke_shared()
         self.update_reference_preview(None, '')
         self.status_label.setText(f'{reason}，请重新捕获上下文。')

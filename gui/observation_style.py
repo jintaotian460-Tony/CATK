@@ -11,32 +11,40 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
 
 AXIS_WIDTH = 64
-LIST_WIDTH = 360
-TEXT = '#20252b'
-MUTED = '#7b828a'
+LIST_WIDTH = 320
+TEXT = '#1e242c'
+MUTED = '#8a94a0'
 
 # These selectors are applied only to the graphic legend and its toolbars.
 CONTROLS = '''
 QToolButton, QPushButton {
-    background: #f3f3f3; color: #20252b; border: 1px solid #bfc3c8;
-    border-radius: 1px; padding: 1px 6px; min-height: 18px;
+    background: #ffffff; color: #1e242c; border: 1px solid #cfd6df;
+    border-radius: 5px; padding: 2px 8px; min-height: 22px;
 }
-QToolButton:hover, QPushButton:hover { background: #e3ebf2; border-color: #8da7bd; }
-QToolButton:disabled, QPushButton:disabled { color: #92989e; border-color: #d6d8db; }
+QToolButton:hover, QPushButton:hover { background: #edf3f9; border-color: #9eb3c9; }
+QToolButton:pressed, QPushButton:pressed { background: #dfeaf4; }
+QToolButton:disabled, QPushButton:disabled {
+    background: #f1f3f6; color: #8a94a0; border-color: #dde2e8;
+}
 QToolButton:checked, QPushButton:checked {
-    background: #315f88; color: white; border-color: #315f88;
+    background: #2b5b84; color: #ffffff; border-color: #2b5b84;
 }
+QToolButton:checked:hover, QPushButton:checked:hover {
+    background: #234c6f; border-color: #234c6f;
+}
+QToolButton[popupMode="2"] { padding-right: 16px; }
+QToolButton::menu-indicator { right: 4px; }
 '''
 LEGEND = CONTROLS + '''
-QWidget#observationLegend { background: #ededed; color: #20252b; }
-QToolButton { background: #ededed; border: 1px solid transparent; padding: 0px 3px; }
-QToolButton:hover { background: #dae5ef; border-color: #a2b6c9; }
-QTreeWidget { background: #f3f3f3; color: #20252b; border: none; outline: none; }
-QTreeWidget::item { min-height: 19px; border-bottom: 1px solid transparent; }
-QTreeWidget::item:selected { background: #d5e5f4; color: #172b3c; border-bottom-color: #98b5cf; }
-QTreeWidget::item:hover:!selected { background: #e6edf3; }
-QHeaderView::section { background: #e5e5e5; color: #31363b; padding: 2px 4px;
-    border: none; border-bottom: 1px solid #b8bcc1; border-right: 1px solid #c9ccd0; }
+QWidget#observationLegend { background: #f6f7f9; color: #1e242c; }
+QToolButton { background: transparent; border: 1px solid transparent; padding: 1px 4px; }
+QToolButton:hover { background: #e3ecf5; border-color: #b3cbe0; }
+QTreeWidget { background: #f6f7f9; color: #1e242c; border: none; outline: none; }
+QTreeWidget::item { min-height: 22px; border-bottom: 1px solid transparent; padding: 1px 2px; }
+QTreeWidget::item:selected { background: #e6eff7; color: #1d4363; border-bottom-color: #b3cbe0; }
+QTreeWidget::item:hover:!selected { background: #eef2f6; }
+QHeaderView::section { background: #f1f3f6; color: #334155; padding: 3px 6px; font-weight: 600;
+    border: none; border-bottom: 1px solid #dde2e8; border-right: 1px solid #dde2e8; }
 '''
 
 
@@ -68,7 +76,7 @@ class ObservationGrid:
         if self.observation_background is not None and self.grid:
             adjusted = []
             for pen, first, last in ticks:
-                color = QColor('#00b000' if dark(self.observation_background) else '#478047')
+                color = QColor('#2e6b40' if dark(self.observation_background) else '#478047')
                 color.setAlpha(min(180, max(25, round(pen.color().alpha()*1.6))))
                 grid_pen = QPen(color, 1, Qt.PenStyle.DotLine)
                 grid_pen.setCosmetic(True)

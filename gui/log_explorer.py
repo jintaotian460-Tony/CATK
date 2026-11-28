@@ -52,6 +52,8 @@ class LogExplorer(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName('LogExplorerPanel')
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.root_path = ''
         self._file_job = None
         self._last_file_result = file_ops.Result()
@@ -88,18 +90,25 @@ class LogExplorer(QWidget):
         folder.clicked.connect(self.choose_root)
         self.search = QLineEdit()
         self.search.setPlaceholderText('Filter log filenames')
+        self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._filter)
         self.label = QLabel('Choose a log folder for this project')
+        self.label.setObjectName('mutedHint')
         self.label.setWordWrap(True)
+        self._empty_stretch = QWidget()
+        self._empty_stretch.setVisible(True)
         row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
         row.addWidget(folder)
         row.addStretch()
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
         layout.addLayout(row)
-        layout.addWidget(self.label)
         layout.addWidget(self.search)
+        layout.addWidget(self.label)
         layout.addWidget(self.tree, 1)
+        layout.addWidget(self._empty_stretch, 1)
         self.operation_status = QLabel()
         self.operation_status.setWordWrap(True)
         self.cancel_operation = QPushButton('取消')
@@ -116,6 +125,7 @@ class LogExplorer(QWidget):
         self.root_path = path
         valid = bool(path) and Path(path).is_dir()
         self.tree.setVisible(valid)
+        self._empty_stretch.setVisible(not valid)
         self.label.setText(Path(path).name if valid else ('Folder unavailable: ' + path if path else 'Choose a log folder for this project'))
         self.label.setToolTip(path)
         if valid:

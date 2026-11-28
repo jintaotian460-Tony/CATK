@@ -24,6 +24,8 @@ class PlaybackBar(QWidget):
 
     def __init__(self, parent=None, *, transport_controls=True):
         super().__init__(parent)
+        self.setObjectName('playbackBar')
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.transport_controls = bool(transport_controls)
         self.clock = PlaybackClock()
         self.epoch = None
@@ -36,6 +38,7 @@ class PlaybackBar(QWidget):
 
         self.play_button = QPushButton('Play')
         self.project_label = QLabel('离线观察')
+        self.project_label.setObjectName('projectBadge')
         self.project_label.setMaximumWidth(180)
         self.project_label.setMinimumWidth(1)
         self.restart_button = QPushButton('Restart')
@@ -74,6 +77,7 @@ class PlaybackBar(QWidget):
             'directly to the BLF header. This avoids applying the timezone twice.\n'
             'Display only; frame timing and the source file are not changed.')
         self.time_label = QLabel('No decoded measurement')
+        self.time_label.setObjectName('timeReadout')
         self.time_label.setMinimumWidth(1)
         self.time_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         # Saved sessions still use the gap setting; its editor lives in Project settings.
@@ -88,14 +92,14 @@ class PlaybackBar(QWidget):
             'Mark samples stale after this many seconds without an update.\n'
             'Curves break across longer gaps; zero disables gap marking.')
         details = QHBoxLayout()
-        details.setSpacing(8)
+        details.setSpacing(10)
         details.addWidget(self.project_label)
         details.addWidget(self.time_mode)
         details.addWidget(self.time_label)
         details.addStretch(1)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 2, 0, 2)
-        layout.setSpacing(0)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(2)
         layout.addWidget(self.transport)
         layout.addLayout(details)
 
